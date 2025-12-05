@@ -1,0 +1,138 @@
+# Streamlit Cloud Deployment Checklist
+
+## ✅ Pre-Deployment Checklist
+
+### Files Cleaned Up
+- [x] Removed old app versions (app.py, app_bct.py, app_enhanced.py)
+- [x] Removed test files (test_connection.py)
+- [x] Removed generated reports (*.pdf, *.xlsx, *.docx)
+- [x] Removed batch files (*.bat, *.sh)
+- [x] Removed main.py (duplicate)
+
+### Required Files Present
+- [x] `streamlit_app.py` - Main application
+- [x] `requirements.txt` - Python dependencies
+- [x] `README.md` - Documentation
+- [x] `.gitignore` - Git ignore rules
+- [x] `src/` folder - All source modules
+- [x] `.streamlit/config.toml` - Streamlit configuration
+
+### Git Repository
+- [ ] Initialize git (if not done): `git init`
+- [ ] Add files: `git add .`
+- [ ] Commit: `git commit -m "Initial commit for Streamlit deployment"`
+- [ ] Create GitHub repository
+- [ ] Add remote: `git remote add origin <your-repo-url>`
+- [ ] Push: `git push -u origin main`
+
+## 🚀 Deployment Steps
+
+### 1. Streamlit Cloud Setup
+1. Go to [share.streamlit.io](https://share.streamlit.io)
+2. Sign in with GitHub
+3. Click "New app"
+
+### 2. App Configuration
+- **Repository**: Select your GitHub repository
+- **Branch**: main (or master)
+- **Main file path**: `streamlit_app.py`
+- **App URL**: Choose a custom URL (optional)
+
+### 3. Advanced Settings (Optional)
+- **Python version**: 3.9 or higher
+- **Secrets**: Add AWS credentials if needed (not recommended for security)
+
+### 4. Deploy
+- Click "Deploy!"
+- Wait for deployment (usually 2-5 minutes)
+- Your app will be live at: `https://your-app-name.streamlit.app`
+
+## 🔒 Security Considerations
+
+### DO NOT commit to Git:
+- `.env` file (already in .gitignore)
+- AWS credentials
+- API keys
+- Passwords
+
+### For Production:
+1. Use Streamlit Secrets for sensitive data
+2. Implement proper authentication
+3. Use IAM roles instead of access keys when possible
+4. Enable MFA on AWS accounts
+5. Regularly rotate credentials
+
+## 📊 Post-Deployment
+
+### Testing
+- [ ] Test login functionality
+- [ ] Test AWS credential input
+- [ ] Run a sample analysis
+- [ ] Test all navigation tabs
+- [ ] Test report generation
+- [ ] Verify AI recommendations work
+
+### Monitoring
+- Check Streamlit Cloud logs for errors
+- Monitor app performance
+- Track user feedback
+
+### Updates
+To update your deployed app:
+```bash
+git add .
+git commit -m "Update description"
+git push origin main
+```
+Streamlit Cloud will automatically redeploy.
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**App won't start:**
+- Check requirements.txt for missing dependencies
+- Verify Python version compatibility
+- Check Streamlit Cloud logs
+
+**Import errors:**
+- Ensure all files in `src/` folder are present
+- Check for typos in import statements
+
+**AWS connection fails:**
+- Verify AWS credentials are correct
+- Check IAM permissions
+- Ensure Cost Explorer is enabled
+
+**Slow performance:**
+- Implement caching with `@st.cache_data`
+- Optimize data loading
+- Consider pagination for large datasets
+
+## 📝 Environment Variables
+
+If using Streamlit Secrets, add to `.streamlit/secrets.toml` (locally) or Streamlit Cloud dashboard:
+
+```toml
+# Example (DO NOT use in production)
+[aws]
+access_key_id = "YOUR_ACCESS_KEY"
+secret_access_key = "YOUR_SECRET_KEY"
+region = "us-east-1"
+```
+
+## 🎉 Success!
+
+Your BCT FinOps Tool is now deployed and accessible worldwide!
+
+**Next Steps:**
+1. Share the URL with your team
+2. Set up monitoring and alerts
+3. Gather user feedback
+4. Plan regular updates and improvements
+
+---
+
+**Deployment Date:** _____________________
+**Deployed By:** _____________________
+**App URL:** _____________________

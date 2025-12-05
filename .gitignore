@@ -1,0 +1,63 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Reports
+*.pdf
+*.docx
+*.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Cache
+.cache/
+*.pyc
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Old versions
+app.py
+app_bct.py
+app_enhanced.py
+app_bct_v2.py
+main.py
+
+# Batch files
+*.bat
+*.sh
