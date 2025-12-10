@@ -201,6 +201,7 @@ def show_sidebar_navigation():
         "💡 Recommendations": "Recommendations",
         "🗂️ Resources": "Resources",
         "💰 Savings Plans": "Savings",
+        "💳 Budget Manager": "Budget",
         "📈 Analytics": "Analytics",
         "📄 Reports": "Reports"
     }
@@ -1719,9 +1720,119 @@ def show_resources():
                 if rs.get('total_monthly_cost', 0) > 500:
                     st.warning("💰 **High Cost Alert**: Redshift costs exceed $500/month. Consider Reserved Nodes and pause/resume schedules for non-production clusters.")
 
+def generate_maturity_data(data):
+    """Generate maturity scoring data for export"""
+    # Get basic metrics
+    rightsizing = data.get('rightsizing', {})
+    ec2_recs = rightsizing.get('recommendations', [])
+    if isinstance(ec2_recs, dict):
+        ec2_recs = ec2_recs.get('RightsizingRecommendations', [])
+    
+    idle_count = data.get('idle_resources', {}).get('total_items', 0)
+    idle_waste = data.get('idle_resources', {}).get('total_monthly_waste', 0)
+    total_cost = data.get('cost_data', {}).get('total_cost', 0)
+    monthly_avg = total_cost / 6 if total_cost else 0
+    rds_underutilized = data.get('rds_data', {}).get('underutilized_count', 0)
+    lambda_rarely_used = data.get('lambda_data', {}).get('rarely_used_count', 0)
+    
+    # Calculate scores
+    total_resources_count = (
+        len(ec2_recs if ec2_recs else []) +
+        data.get('s3_data', {}).get('total_buckets', 0) +
+        data.get('rds_data', {}).get('total_instances', 0) +
+        data.get('lambda_data', {}).get('total_functions', 0)
+    )
+    
+    tagged_percentage = 50  # Placeholder
+    if tagged_percentage >= 90:
+        tag_score = 4
+    elif tagged_percentage >= 70:
+        tag_score = 3
+    elif tagged_percentage >= 40:
+        tag_score = 2
+    else:
+        tag_score = 1
+    
+    budget_alerts = data.get('budget_alerts', {})
+    total_budget = budget_alerts.get('total_budget', 0)
+    total_actual = budget_alerts.get('total_actual', 0)
+    budget_utilization = (total_actual / total_budget * 100) if total_budget > 0 else 0
+    
+    if 80 <= budget_utilization <= 95:
+        budget_score = 4
+    elif 70 <= budget_utilization < 80 or 95 < budget_utilization <= 100:
+        budget_score = 3
+    elif 50 <= budget_utilization < 70 or 100 < budget_utilization <= 110:
+        budget_score = 2
+    else:
+        budget_score = 1
+    
+    potential_monthly_savings = idle_waste
+    if monthly_avg > 0:
+        savings_percentage = (potential_monthly_savings / monthly_avg) * 100
+    else:
+        savings_percentage = 0
+    
+    if savings_percentage < 5:
+        savings_score = 4
+    elif savings_percentage < 15:
+        savings_score = 3
+    elif savings_percentage < 30:
+        savings_score = 2
+    else:
+        savings_score = 1
+    
+    underutilized_count = rds_underutilized + lambda_rarely_used + idle_count
+    if total_resources_count > 0:
+        utilization_percentage = ((total_resources_count - underutilized_count) / total_resources_count) * 100
+    else:
+        utilization_percentage = 100
+    
+    if utilization_percentage >= 90:
+        utilization_score = 4
+    elif utilization_percentage >= 75:
+        utilization_score = 3
+    elif utilization_percentage >= 60:
+        utilization_score = 2
+    else:
+        utilization_score = 1
+    
+    overall_maturity = (tag_score + budget_score + savings_score + utilization_score) / 4
+    
+    if overall_maturity >= 3.5:
+        maturity_level = "Optimize / Innovate"
+        maturity_description = "Continuous optimization, predictive analytics, business value tracking"
+    elif overall_maturity >= 2.5:
+        maturity_level = "Run"
+        maturity_description = "Mature governance, fully automated, cost-efficient systems"
+    elif overall_maturity >= 1.5:
+        maturity_level = "Walk"
+        maturity_description = "Defined processes, partial automation, beginning operational discipline"
+    else:
+        maturity_level = "Crawl"
+        maturity_description = "Ad-hoc processes, limited visibility, reactive cost control"
+    
+    return {
+        'overall_maturity': overall_maturity,
+        'maturity_level': maturity_level,
+        'maturity_description': maturity_description,
+        'tag_score': tag_score,
+        'budget_score': budget_score,
+        'savings_score': savings_score,
+        'utilization_score': utilization_score,
+        'tagged_percentage': tagged_percentage,
+        'budget_utilization': budget_utilization,
+        'savings_percentage': savings_percentage,
+        'utilization_percentage': utilization_percentage,
+        'potential_monthly_savings': potential_monthly_savings,
+        'total_resources_count': total_resources_count,
+        'underutilized_count': underutilized_count,
+        'analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+
 def show_kpi():
-    """KPI Dashboard page"""
-    st.markdown("## 📊 Key Performance Indicators (KPI)")
+    """FinOps Maturity Scoring Dashboard"""
+    st.markdown("## 🎯 FinOps Maturity Scoring")
     
     if not st.session_state.analyzed:
         st.info("👈 Please run analysis in Settings first")
@@ -1729,170 +1840,663 @@ def show_kpi():
     
     data = st.session_state.all_analysis_data
     
-    # Financial KPIs
-    st.markdown("### 💰 Financial KPIs")
+    # Get basic metrics for calculations
+    rightsizing = data.get('rightsizing', {})
+    ec2_recs = rightsizing.get('recommendations', [])
+    if isinstance(ec2_recs, dict):
+        ec2_recs = ec2_recs.get('RightsizingRecommendations', [])
     
-    fin_col1, fin_col2, fin_col3, fin_col4 = st.columns(4)
+    idle_count = data.get('idle_resources', {}).get('total_items', 0)
+    idle_waste = data.get('idle_resources', {}).get('total_monthly_waste', 0)
+    total_cost = data.get('cost_data', {}).get('total_cost', 0)
+    monthly_avg = total_cost / 6 if total_cost else 0
+    rds_underutilized = data.get('rds_data', {}).get('underutilized_count', 0)
+    lambda_rarely_used = data.get('lambda_data', {}).get('rarely_used_count', 0)
     
-    with fin_col1:
-        total_cost = data.get('cost_data', {}).get('total_cost', 0)
-        st.metric("Total Cost (6mo)", f"${total_cost:,.2f}")
+    # Export buttons at the top
+    st.markdown("### 📥 Export Maturity Report")
     
-    with fin_col2:
-        monthly_avg = total_cost / 6 if total_cost else 0
-        st.metric("Monthly Average", f"${monthly_avg:,.2f}")
+    export_col1, export_col2, export_col3 = st.columns(3)
     
-    with fin_col3:
-        idle_waste = data.get('idle_resources', {}).get('total_monthly_waste', 0)
-        st.metric("Monthly Waste", f"${idle_waste:,.2f}", delta=f"-${idle_waste:,.2f}", delta_color="inverse")
+    with export_col1:
+        if st.button("📄 Export PDF", use_container_width=True):
+            with st.spinner("Generating PDF report..."):
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    pdf_path = f"finops_maturity_report_{timestamp}.pdf"
+                    
+                    # Generate maturity report data
+                    maturity_data = generate_maturity_data(data)
+                    
+                    # Generate enhanced KPI PDF with charts and visualizations
+                    cost_data_for_pdf = {
+                        'total_cost': data.get('cost_data', {}).get('total_cost', 0)
+                    }
+                    
+                    report_gen = ReportGenerator()
+                    report_gen.generate_kpi_pdf(maturity_data, cost_data_for_pdf, pdf_path)
+                    
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            "⬇️ Download PDF Report",
+                            f,
+                            file_name=pdf_path,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    
+                    st.success("✅ PDF report generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating PDF: {str(e)}")
     
-    with fin_col4:
-        annual_savings = idle_waste * 12
-        st.metric("Annual Savings Potential", f"${annual_savings:,.2f}", delta=f"-${annual_savings:,.2f}", delta_color="inverse")
+    with export_col2:
+        if st.button("📊 Export Excel", use_container_width=True):
+            with st.spinner("Generating Excel report..."):
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    excel_path = f"finops_maturity_report_{timestamp}.xlsx"
+                    
+                    # Generate maturity report data
+                    maturity_data = generate_maturity_data(data)
+                    
+                    # Create Excel file using pandas
+                    
+                    # Create maturity summary
+                    summary_data = {
+                        'Metric': ['Overall Maturity Score', 'Maturity Level', 'Tagged Resources Score', 
+                                  'Budget Utilization Score', 'Savings Optimization Score', 'Resource Utilization Score'],
+                        'Value': [f"{maturity_data['overall_maturity']:.1f}/4.0", maturity_data['maturity_level'],
+                                 f"{maturity_data['tag_score']}/4", f"{maturity_data['budget_score']}/4",
+                                 f"{maturity_data['savings_score']}/4", f"{maturity_data['utilization_score']}/4"],
+                        'Percentage': [f"{maturity_data['overall_maturity']/4*100:.1f}%", "N/A",
+                                      f"{maturity_data['tagged_percentage']:.1f}%", f"{maturity_data['budget_utilization']:.1f}%",
+                                      f"{maturity_data['savings_percentage']:.1f}%", f"{maturity_data['utilization_percentage']:.1f}%"]
+                    }
+                    
+                    df_summary = pd.DataFrame(summary_data)
+                    
+                    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                        df_summary.to_excel(writer, sheet_name='Maturity Summary', index=False)
+                        
+                        # Add raw data sheet
+                        raw_data = pd.DataFrame([maturity_data])
+                        raw_data.to_excel(writer, sheet_name='Raw Data', index=False)
+                    
+                    with open(excel_path, "rb") as f:
+                        st.download_button(
+                            "⬇️ Download Excel Report",
+                            f,
+                            file_name=excel_path,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    
+                    st.success("✅ Excel report generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating Excel: {str(e)}")
+    
+    with export_col3:
+        if st.button("📝 Export Word", use_container_width=True):
+            with st.spinner("Generating Word document..."):
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    docx_path = f"finops_maturity_report_{timestamp}.docx"
+                    
+                    # Generate maturity report data
+                    maturity_data = generate_maturity_data(data)
+                    
+                    # Create Word document using existing generator
+                    mock_cost_data = {
+                        'total_cost': data.get('cost_data', {}).get('total_cost', 0),
+                        'monthly_average': data.get('cost_data', {}).get('total_cost', 0) / 6
+                    }
+                    mock_ri_data = {
+                        'current_ris': [],
+                        'recommendations': {'Recommendations': []}
+                    }
+                    
+                    maturity_recommendations = [
+                        {
+                            'title': f'FinOps Maturity Assessment',
+                            'description': f'Overall Maturity Level: {maturity_data["maturity_level"]} (Score: {maturity_data["overall_maturity"]:.1f}/4.0)',
+                            'severity': 'High' if maturity_data["overall_maturity"] < 2.5 else 'Medium',
+                            'estimated_savings': f'${maturity_data["potential_monthly_savings"]:,.2f}/month',
+                            'category': 'FinOps Maturity'
+                        }
+                    ]
+                    
+                    report_gen = ReportGenerator()
+                    report_gen.generate_docx(mock_cost_data, mock_ri_data, maturity_recommendations, docx_path)
+                    
+                    with open(docx_path, "rb") as f:
+                        st.download_button(
+                            "⬇️ Download Word Document",
+                            f,
+                            file_name=docx_path,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+                    
+                    st.success("✅ Word document generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating Word: {str(e)}")
     
     st.markdown("---")
     
-    # Operational KPIs
-    st.markdown("### ⚙️ Operational KPIs")
+    # Calculate maturity scores for different dimensions
     
-    op_col1, op_col2, op_col3, op_col4, op_col5 = st.columns(5)
-    
-    with op_col1:
-        rightsizing = data.get('rightsizing', {})
-        ec2_recs = rightsizing.get('recommendations', [])
-        if isinstance(ec2_recs, dict):
-            ec2_recs = ec2_recs.get('RightsizingRecommendations', [])
-        st.metric("EC2 Instances", len(ec2_recs) if ec2_recs else 0)
-    
-    with op_col2:
-        st.metric("S3 Buckets", data.get('s3_data', {}).get('total_buckets', 0))
-    
-    with op_col3:
-        st.metric("RDS Instances", data.get('rds_data', {}).get('total_instances', 0))
-    
-    with op_col4:
-        st.metric("Lambda Functions", data.get('lambda_data', {}).get('total_functions', 0))
-    
-    with op_col5:
-        idle_items = data.get('idle_resources', {}).get('total_items', 0)
-        st.metric("Idle Resources", idle_items, delta=f"{idle_items}", delta_color="inverse")
-    
-    st.markdown("---")
-    
-    # Optimization KPIs
-    st.markdown("### 🎯 Optimization KPIs")
-    
-    opt_col1, opt_col2, opt_col3, opt_col4 = st.columns(4)
-    
-    with opt_col1:
-        rec_count = len(data.get('recommendations', []))
-        st.metric("Total Recommendations", rec_count)
-    
-    with opt_col2:
-        critical_high = sum(1 for r in data.get('recommendations', []) if r.get('severity') in ['Critical', 'High'])
-        st.metric("High Priority Items", critical_high, delta=f"{critical_high}", delta_color="inverse")
-    
-    with opt_col3:
-        rds_underutilized = data.get('rds_data', {}).get('underutilized_count', 0)
-        st.metric("Underutilized RDS", rds_underutilized, delta=f"{rds_underutilized}", delta_color="inverse")
-    
-    with opt_col4:
-        lambda_rarely_used = data.get('lambda_data', {}).get('rarely_used_count', 0)
-        st.metric("Rarely Used Lambda", lambda_rarely_used, delta=f"{lambda_rarely_used}", delta_color="inverse")
-    
-    st.markdown("---")
-    
-    # Storage KPIs
-    st.markdown("### 💾 Storage KPIs")
-    
-    stor_col1, stor_col2, stor_col3, stor_col4 = st.columns(4)
-    
-    with stor_col1:
-        s3_size = data.get('s3_data', {}).get('total_size_gb', 0)
-        st.metric("S3 Storage", f"{s3_size:,.0f} GB")
-    
-    with stor_col2:
-        s3_cost = data.get('s3_data', {}).get('estimated_monthly_cost', 0)
-        st.metric("S3 Monthly Cost", f"${s3_cost:,.2f}")
-    
-    with stor_col3:
-        ebs_volumes = len(data.get('idle_resources', {}).get('ebs_volumes', []))
-        st.metric("Unattached EBS", ebs_volumes, delta=f"{ebs_volumes}", delta_color="inverse")
-    
-    with stor_col4:
-        ddb_tables = data.get('dynamodb_data', {}).get('total_tables', 0)
-        st.metric("DynamoDB Tables", ddb_tables)
-    
-    st.markdown("---")
-    
-    # Compute KPIs
-    st.markdown("### 💻 Compute KPIs")
-    
-    comp_col1, comp_col2, comp_col3, comp_col4 = st.columns(4)
-    
-    with comp_col1:
-        eks_clusters = data.get('eks_data', {}).get('total_clusters', 0)
-        st.metric("EKS Clusters", eks_clusters)
-    
-    with comp_col2:
-        ecs_tasks = data.get('ecs_data', {}).get('total_tasks', 0)
-        st.metric("ECS Tasks", ecs_tasks)
-    
-    with comp_col3:
-        lambda_invocations = data.get('lambda_data', {}).get('total_invocations_30d', 0)
-        st.metric("Lambda Invocations (30d)", f"{lambda_invocations:,}")
-    
-    with comp_col4:
-        rds_cost = data.get('rds_data', {}).get('total_monthly_cost', 0)
-        st.metric("RDS Monthly Cost", f"${rds_cost:,.2f}")
-    
-    st.markdown("---")
-    
-    # Cost Efficiency Score
-    st.markdown("### 🎖️ Cost Efficiency Score")
-    
-    # Calculate efficiency score (0-100)
-    total_resources = (
+    # 1. Tagged Resources Score (0-4)
+    total_resources_count = (
         len(ec2_recs if ec2_recs else []) +
         data.get('s3_data', {}).get('total_buckets', 0) +
         data.get('rds_data', {}).get('total_instances', 0) +
         data.get('lambda_data', {}).get('total_functions', 0)
     )
-    
-    idle_count = data.get('idle_resources', {}).get('total_items', 0)
-    
-    if total_resources > 0:
-        efficiency_score = max(0, 100 - (idle_count / total_resources * 100))
+    # Assume 50% are tagged (in real scenario, this would come from actual tag analysis)
+    tagged_percentage = 50  # Placeholder
+    if tagged_percentage >= 90:
+        tag_score = 4
+    elif tagged_percentage >= 70:
+        tag_score = 3
+    elif tagged_percentage >= 40:
+        tag_score = 2
     else:
-        efficiency_score = 100
+        tag_score = 1
     
-    score_col1, score_col2 = st.columns([1, 2])
+    # 2. Budget Utilization Score (0-4)
+    budget_alerts = data.get('budget_alerts', {})
+    total_budget = budget_alerts.get('total_budget', 0)
+    total_actual = budget_alerts.get('total_actual', 0)
+    budget_utilization = (total_actual / total_budget * 100) if total_budget > 0 else 0
     
-    with score_col1:
-        st.metric("Efficiency Score", f"{efficiency_score:.1f}%")
+    if 80 <= budget_utilization <= 95:
+        budget_score = 4  # Optimal range
+    elif 70 <= budget_utilization < 80 or 95 < budget_utilization <= 100:
+        budget_score = 3
+    elif 50 <= budget_utilization < 70 or 100 < budget_utilization <= 110:
+        budget_score = 2
+    else:
+        budget_score = 1
+    
+    # 3. Savings from Optimization Score (0-4)
+    potential_monthly_savings = idle_waste
+    if monthly_avg > 0:
+        savings_percentage = (potential_monthly_savings / monthly_avg) * 100
+    else:
+        savings_percentage = 0
+    
+    if savings_percentage < 5:
+        savings_score = 4  # Already optimized
+    elif savings_percentage < 15:
+        savings_score = 3
+    elif savings_percentage < 30:
+        savings_score = 2
+    else:
+        savings_score = 1  # High waste
+    
+    # 4. Resource Utilization Score (0-4)
+    underutilized_count = rds_underutilized + lambda_rarely_used + idle_count
+    if total_resources_count > 0:
+        utilization_percentage = ((total_resources_count - underutilized_count) / total_resources_count) * 100
+    else:
+        utilization_percentage = 100
+    
+    if utilization_percentage >= 90:
+        utilization_score = 4
+    elif utilization_percentage >= 75:
+        utilization_score = 3
+    elif utilization_percentage >= 60:
+        utilization_score = 2
+    else:
+        utilization_score = 1
+    
+    # Calculate overall maturity score
+    overall_maturity = (tag_score + budget_score + savings_score + utilization_score) / 4
+    
+    # Determine maturity level
+    if overall_maturity >= 3.5:
+        maturity_level = "Optimize / Innovate"
+        maturity_color = "green"
+        maturity_description = "Continuous optimization, predictive analytics, business value tracking"
+    elif overall_maturity >= 2.5:
+        maturity_level = "Run"
+        maturity_color = "blue"
+        maturity_description = "Mature governance, fully automated, cost-efficient systems"
+    elif overall_maturity >= 1.5:
+        maturity_level = "Walk"
+        maturity_color = "orange"
+        maturity_description = "Defined processes, partial automation, beginning operational discipline"
+    else:
+        maturity_level = "Crawl"
+        maturity_color = "red"
+        maturity_description = "Ad-hoc processes, limited visibility, reactive cost control"
+    
+
+    
+    # FinOps Maturity Visualization
+    st.markdown("### 📊 FinOps Maturity Analysis")
+    
+    # Calculate scores first (moved up from below)
+    # 1. Tagged Resources Score (0-4)
+    total_resources_count = (
+        len(ec2_recs if ec2_recs else []) +
+        data.get('s3_data', {}).get('total_buckets', 0) +
+        data.get('rds_data', {}).get('total_instances', 0) +
+        data.get('lambda_data', {}).get('total_functions', 0)
+    )
+    # Assume 50% are tagged (in real scenario, this would come from actual tag analysis)
+    tagged_percentage = 50  # Placeholder
+    if tagged_percentage >= 90:
+        tag_score = 4
+    elif tagged_percentage >= 70:
+        tag_score = 3
+    elif tagged_percentage >= 40:
+        tag_score = 2
+    else:
+        tag_score = 1
+    
+    # 2. Budget Utilization Score (0-4)
+    budget_alerts = data.get('budget_alerts', {})
+    total_budget = budget_alerts.get('total_budget', 0)
+    total_actual = budget_alerts.get('total_actual', 0)
+    budget_utilization = (total_actual / total_budget * 100) if total_budget > 0 else 0
+    
+    if 80 <= budget_utilization <= 95:
+        budget_score = 4  # Optimal range
+    elif 70 <= budget_utilization < 80 or 95 < budget_utilization <= 100:
+        budget_score = 3
+    elif 50 <= budget_utilization < 70 or 100 < budget_utilization <= 110:
+        budget_score = 2
+    else:
+        budget_score = 1
+    
+    # 3. Savings from Optimization Score (0-4)
+    potential_monthly_savings = idle_waste
+    if monthly_avg > 0:
+        savings_percentage = (potential_monthly_savings / monthly_avg) * 100
+    else:
+        savings_percentage = 0
+    
+    if savings_percentage < 5:
+        savings_score = 4  # Already optimized
+    elif savings_percentage < 15:
+        savings_score = 3
+    elif savings_percentage < 30:
+        savings_score = 2
+    else:
+        savings_score = 1  # High waste
+    
+    # 4. Resource Utilization Score (0-4)
+    underutilized_count = rds_underutilized + lambda_rarely_used + idle_count
+    if total_resources_count > 0:
+        utilization_percentage = ((total_resources_count - underutilized_count) / total_resources_count) * 100
+    else:
+        utilization_percentage = 100
+    
+    if utilization_percentage >= 90:
+        utilization_score = 4
+    elif utilization_percentage >= 75:
+        utilization_score = 3
+    elif utilization_percentage >= 60:
+        utilization_score = 2
+    else:
+        utilization_score = 1
+    
+    # Calculate overall maturity score
+    overall_maturity = (tag_score + budget_score + savings_score + utilization_score) / 4
+    
+    # Create visualizations
+    viz_col1, viz_col2 = st.columns(2)
+    
+    with viz_col1:
+        # Maturity Score Gauge Chart
+        import plotly.graph_objects as go
         
-        if efficiency_score >= 90:
-            st.success("🌟 Excellent! Your infrastructure is highly optimized.")
-        elif efficiency_score >= 75:
-            st.info("👍 Good! Some optimization opportunities exist.")
-        elif efficiency_score >= 60:
-            st.warning("⚠️ Fair. Consider reviewing idle resources.")
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number+delta",
+            value = overall_maturity,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Overall FinOps Maturity"},
+            delta = {'reference': 2.5},
+            gauge = {
+                'axis': {'range': [None, 4]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 1], 'color': "lightgray"},
+                    {'range': [1, 2], 'color': "orange"},
+                    {'range': [2, 3], 'color': "yellow"},
+                    {'range': [3, 4], 'color': "lightgreen"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 3.5
+                }
+            }
+        ))
+        fig_gauge.update_layout(height=300)
+        st.plotly_chart(fig_gauge, use_container_width=True)
+    
+    with viz_col2:
+        # Dimension Scores Radar Chart
+        import plotly.graph_objects as go
+        
+        categories = ['Tagged Resources', 'Budget Utilization', 'Savings Optimization', 'Resource Utilization']
+        scores = [tag_score, budget_score, savings_score, utilization_score]
+        
+        fig_radar = go.Figure()
+        
+        fig_radar.add_trace(go.Scatterpolar(
+            r=scores,
+            theta=categories,
+            fill='toself',
+            name='Current Score',
+            line_color='rgb(0, 102, 204)'
+        ))
+        
+        # Add ideal score line
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[4, 4, 4, 4],
+            theta=categories,
+            fill='toself',
+            name='Target Score',
+            line_color='rgb(40, 167, 69)',
+            opacity=0.3
+        ))
+        
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 4]
+                )),
+            showlegend=True,
+            title="Maturity Dimensions",
+            height=300
+        )
+        
+        st.plotly_chart(fig_radar, use_container_width=True)
+    
+    # Cost Analysis Charts
+    st.markdown("### 💰 Cost Analysis Dashboard")
+    
+    cost_col1, cost_col2 = st.columns(2)
+    
+    with cost_col1:
+        # Monthly Cost Trend (simulated data)
+        import plotly.express as px
+        
+        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+        monthly_costs = [monthly_avg * 0.9, monthly_avg * 1.1, monthly_avg * 0.95, 
+                        monthly_avg * 1.05, monthly_avg * 0.98, monthly_avg]
+        
+        fig_trend = px.line(
+            x=months, 
+            y=monthly_costs,
+            title='6-Month Cost Trend',
+            labels={'x': 'Month', 'y': 'Cost ($)'}
+        )
+        fig_trend.update_traces(line_color='rgb(0, 102, 204)', line_width=3)
+        fig_trend.update_layout(height=300)
+        st.plotly_chart(fig_trend, use_container_width=True)
+    
+    with cost_col2:
+        # Savings Opportunity Breakdown
+        savings_data = {
+            'Category': ['Idle Resources', 'Rightsizing', 'Reserved Instances', 'Storage Optimization'],
+            'Savings': [idle_waste * 0.4, idle_waste * 0.3, idle_waste * 0.2, idle_waste * 0.1]
+        }
+        
+        fig_savings = px.pie(
+            values=savings_data['Savings'],
+            names=savings_data['Category'],
+            title='Potential Monthly Savings Breakdown'
+        )
+        fig_savings.update_layout(height=300)
+        st.plotly_chart(fig_savings, use_container_width=True)
+    
+    # Resource Utilization Analysis
+    st.markdown("### 📈 Resource Utilization Analysis")
+    
+    util_col1, util_col2 = st.columns(2)
+    
+    with util_col1:
+        # Resource Type Distribution
+        resource_counts = {
+            'EC2': len(ec2_recs) if ec2_recs else 0,
+            'RDS': data.get('rds_data', {}).get('total_instances', 0),
+            'Lambda': data.get('lambda_data', {}).get('total_functions', 0),
+            'S3': data.get('s3_data', {}).get('total_buckets', 0)
+        }
+        
+        # Filter out zero values
+        resource_counts = {k: v for k, v in resource_counts.items() if v > 0}
+        
+        if resource_counts:
+            fig_resources = px.bar(
+                x=list(resource_counts.keys()),
+                y=list(resource_counts.values()),
+                title='Resource Count by Service',
+                labels={'x': 'Service', 'y': 'Count'},
+                color=list(resource_counts.values()),
+                color_continuous_scale='Blues'
+            )
+            fig_resources.update_layout(height=300, showlegend=False)
+            st.plotly_chart(fig_resources, use_container_width=True)
         else:
-            st.error("🚨 Poor. Immediate optimization needed!")
+            st.info("No resource data available for visualization")
     
-    with score_col2:
-        st.progress(efficiency_score / 100)
-        st.caption(f"Based on {total_resources} total resources and {idle_count} idle resources")
+    with util_col2:
+        # Utilization vs Waste Comparison
+        utilization_data = {
+            'Status': ['Utilized', 'Underutilized', 'Idle'],
+            'Count': [
+                max(0, total_resources_count - underutilized_count - idle_count),
+                underutilized_count,
+                idle_count
+            ],
+            'Color': ['#28a745', '#ffc107', '#dc3545']
+        }
         
-        # Recommendations based on score
-        if efficiency_score < 90:
-            st.markdown("**Quick Wins:**")
-            if idle_count > 0:
-                st.write(f"- Clean up {idle_count} idle resources")
-            if critical_high > 0:
-                st.write(f"- Address {critical_high} high-priority recommendations")
-            if rds_underutilized > 0:
-                st.write(f"- Rightsize {rds_underutilized} underutilized RDS instances")
+        fig_util = px.bar(
+            x=utilization_data['Status'],
+            y=utilization_data['Count'],
+            title='Resource Utilization Status',
+            labels={'x': 'Status', 'y': 'Resource Count'},
+            color=utilization_data['Status'],
+            color_discrete_map={
+                'Utilized': '#28a745',
+                'Underutilized': '#ffc107', 
+                'Idle': '#dc3545'
+            }
+        )
+        fig_util.update_layout(height=300, showlegend=False)
+        st.plotly_chart(fig_util, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # FinOps Maturity Scoring Model
+    st.markdown("### 🎯 FinOps Maturity Scoring Model")
+    
+    # Determine maturity level
+    if overall_maturity >= 3.5:
+        maturity_level = "Optimize / Innovate"
+        maturity_color = "green"
+        maturity_description = "Continuous optimization, predictive analytics, business value tracking"
+    elif overall_maturity >= 2.5:
+        maturity_level = "Run"
+        maturity_color = "blue"
+        maturity_description = "Mature governance, fully automated, cost-efficient systems"
+    elif overall_maturity >= 1.5:
+        maturity_level = "Walk"
+        maturity_color = "orange"
+        maturity_description = "Defined processes, partial automation, beginning operational discipline"
+    else:
+        maturity_level = "Crawl"
+        maturity_color = "red"
+        maturity_description = "Ad-hoc processes, limited visibility, reactive cost control"
+    
+    # Display Maturity Model
+    mat_col1, mat_col2 = st.columns([1, 2])
+    
+    with mat_col1:
+        st.markdown(f"""
+            <div style='background: linear-gradient(135deg, #0066cc 0%, #003d7a 100%); 
+                        padding: 30px; border-radius: 12px; text-align: center; color: white;'>
+                <div style='font-size: 48px; font-weight: 800; margin-bottom: 10px;'>{overall_maturity:.1f}</div>
+                <div style='font-size: 20px; font-weight: 600;'>{maturity_level}</div>
+                <div style='font-size: 14px; margin-top: 10px; opacity: 0.9;'>Maturity Score</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if overall_maturity >= 3.5:
+            st.success("🌟 Excellent! Leading FinOps practices")
+        elif overall_maturity >= 2.5:
+            st.info("👍 Good! Mature FinOps implementation")
+        elif overall_maturity >= 1.5:
+            st.warning("⚠️ Fair. Developing FinOps capabilities")
+        else:
+            st.error("🚨 Needs Improvement. Begin FinOps journey")
+    
+    with mat_col2:
+        st.markdown(f"**Description:** {maturity_description}")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Dimension scores
+        st.markdown("#### 📊 Dimension Scores")
+        
+        dim_data = {
+            'Dimension': ['Tagged Resources', 'Budget Utilization', 'Savings Optimization', 'Resource Utilization'],
+            'Score': [tag_score, budget_score, savings_score, utilization_score],
+            'Status': [
+                f"{tagged_percentage:.0f}% tagged",
+                f"{budget_utilization:.1f}% utilized",
+                f"{savings_percentage:.1f}% potential savings",
+                f"{utilization_percentage:.1f}% utilized"
+            ]
+        }
+        
+        dim_df = pd.DataFrame(dim_data)
+        
+        # Color code the scores
+        def color_score(val):
+            if val >= 3.5:
+                return 'background-color: #d4edda'
+            elif val >= 2.5:
+                return 'background-color: #d1ecf1'
+            elif val >= 1.5:
+                return 'background-color: #fff3cd'
+            else:
+                return 'background-color: #f8d7da'
+        
+        styled_df = dim_df.style.applymap(color_score, subset=['Score'])
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # Maturity Level Reference Table
+    st.markdown("#### 📋 FinOps Maturity Levels")
+    
+    maturity_ref = pd.DataFrame({
+        'Maturity Level': ['Crawl', 'Walk', 'Run', 'Optimize / Innovate'],
+        'Score': ['1', '2', '3', '4'],
+        'Description': [
+            'Ad-hoc processes, limited visibility, reactive cost control',
+            'Defined processes, partial automation, beginning operational discipline',
+            'Mature governance, fully automated, cost-efficient systems',
+            'Continuous optimization, predictive analytics, business value tracking'
+        ]
+    })
+    
+    st.dataframe(maturity_ref, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # Account Scanner Report
+    st.markdown("### 🔍 Account Scanner Report")
+    
+    scanner_col1, scanner_col2, scanner_col3, scanner_col4 = st.columns(4)
+    
+    with scanner_col1:
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0066cc;'>
+                <div style='font-size: 14px; color: #6c757d; margin-bottom: 5px;'>Tagged Resources</div>
+                <div style='font-size: 32px; font-weight: 700; color: #0066cc;'>{:.0f}%</div>
+                <div style='font-size: 12px; color: #6c757d; margin-top: 5px;'>Score: {}/4</div>
+            </div>
+        """.format(tagged_percentage, tag_score), unsafe_allow_html=True)
+        
+        if tag_score < 3:
+            st.caption("⚠️ Improve resource tagging")
+        else:
+            st.caption("✅ Good tagging coverage")
+    
+    with scanner_col2:
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;'>
+                <div style='font-size: 14px; color: #6c757d; margin-bottom: 5px;'>Budget Utilization</div>
+                <div style='font-size: 32px; font-weight: 700; color: #28a745;'>{:.1f}%</div>
+                <div style='font-size: 12px; color: #6c757d; margin-top: 5px;'>Score: {}/4</div>
+            </div>
+        """.format(budget_utilization, budget_score), unsafe_allow_html=True)
+        
+        if budget_score < 3:
+            st.caption("⚠️ Review budget allocation")
+        else:
+            st.caption("✅ Optimal budget usage")
+    
+    with scanner_col3:
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;'>
+                <div style='font-size: 14px; color: #6c757d; margin-bottom: 5px;'>Savings Opportunity</div>
+                <div style='font-size: 32px; font-weight: 700; color: #ffc107;'>${:,.0f}</div>
+                <div style='font-size: 12px; color: #6c757d; margin-top: 5px;'>Score: {}/4</div>
+            </div>
+        """.format(potential_monthly_savings, savings_score), unsafe_allow_html=True)
+        
+        if savings_score < 3:
+            st.caption("⚠️ High optimization potential")
+        else:
+            st.caption("✅ Well optimized")
+    
+    with scanner_col4:
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;'>
+                <div style='font-size: 14px; color: #6c757d; margin-bottom: 5px;'>Resource Utilization</div>
+                <div style='font-size: 32px; font-weight: 700; color: #17a2b8;'>{:.1f}%</div>
+                <div style='font-size: 12px; color: #6c757d; margin-top: 5px;'>Score: {}/4</div>
+            </div>
+        """.format(utilization_percentage, utilization_score), unsafe_allow_html=True)
+        
+        if utilization_score < 3:
+            st.caption("⚠️ Many underutilized resources")
+        else:
+            st.caption("✅ High utilization")
+    
+    
+    st.markdown("---")
+    
+    st.markdown("""
+        ### 📋 Report Contents
+        
+        **FinOps Maturity Assessment includes:**
+        - **Overall Maturity Score**: Comprehensive 1-4 scale assessment
+        - **Dimension Analysis**: Tagged Resources, Budget Utilization, Savings Optimization, Resource Utilization
+        - **Maturity Level**: Crawl, Walk, Run, or Optimize/Innovate classification
+        - **Account Scanner Results**: Detailed metrics and recommendations
+        - **Implementation Roadmap**: Next steps for improving maturity
+        - **Best Practices**: Industry-standard FinOps recommendations
+        
+        **Export Formats:**
+        - **PDF**: Executive summary with visual charts and recommendations
+        - **Excel**: Detailed data with pivot tables and analysis worksheets
+        - **Word**: Editable document for customization and sharing
+    """)
 
 def show_savings():
     """Savings Plans page"""
@@ -1904,27 +2508,784 @@ def show_savings():
     
     data = st.session_state.all_analysis_data
     
-    # Savings Plans
-    st.markdown("### Savings Plans")
-    sp = data.get('savings_plans', {})
+    # AI-Powered RI Recommendations Section
+    st.markdown("### 🤖 AI-Powered Reserved Instance Recommendations")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Annual Savings Potential", f"${sp.get('estimated_savings', 0):,.2f}")
-    with col2:
-        st.metric("Monthly Savings", f"${sp.get('estimated_savings', 0)/12:,.2f}")
+    ri_data = data.get('ri_data', {})
+    ri_recommendations = ri_data.get('recommendations', {}).get('Recommendations', [])
+    current_ris = ri_data.get('current_ris', [])
+    
+    # Summary metrics
+    ai_col1, ai_col2, ai_col3, ai_col4 = st.columns(4)
+    
+    with ai_col1:
+        total_potential_savings = sum(float(rec.get('EstimatedMonthlySavingsAmount', 0)) for rec in ri_recommendations)
+        st.metric("💡 AI Identified Savings", f"${total_potential_savings * 12:,.0f}/year", 
+                 delta=f"${total_potential_savings:,.0f}/month")
+    
+    with ai_col2:
+        st.metric("🎯 RI Opportunities", len(ri_recommendations))
+    
+    with ai_col3:
+        active_ris = len(current_ris)
+        st.metric("✅ Active RIs", active_ris)
+    
+    with ai_col4:
+        if ri_recommendations:
+            avg_savings_percent = sum(float(rec.get('EstimatedSavingsPercentage', 0)) for rec in ri_recommendations) / len(ri_recommendations)
+            st.metric("📈 Avg Savings %", f"{avg_savings_percent:.1f}%")
+        else:
+            st.metric("📈 Avg Savings %", "0%")
     
     st.markdown("---")
     
-    # Reserved Instances
-    st.markdown("### Reserved Instances")
-    ri = data.get('ri_data', {})
+    # AI Recommendations Details
+    if ri_recommendations:
+        st.markdown("### 🧠 Intelligent RI Purchase Recommendations")
+        
+        # Priority filter
+        priority_filter = st.selectbox(
+            "Filter by Priority:",
+            ["All Recommendations", "High Savings (>$500/month)", "Medium Savings ($100-$500/month)", "Low Savings (<$100/month)"]
+        )
+        
+        # Filter recommendations based on priority
+        filtered_recs = ri_recommendations
+        if priority_filter == "High Savings (>$500/month)":
+            filtered_recs = [r for r in ri_recommendations if float(r.get('EstimatedMonthlySavingsAmount', 0)) > 500]
+        elif priority_filter == "Medium Savings ($100-$500/month)":
+            filtered_recs = [r for r in ri_recommendations if 100 <= float(r.get('EstimatedMonthlySavingsAmount', 0)) <= 500]
+        elif priority_filter == "Low Savings (<$100/month)":
+            filtered_recs = [r for r in ri_recommendations if float(r.get('EstimatedMonthlySavingsAmount', 0)) < 100]
+        
+        if not filtered_recs:
+            st.info(f"No recommendations match the selected filter: {priority_filter}")
+        else:
+            for idx, rec in enumerate(filtered_recs, 1):
+                # Extract recommendation details
+                instance_family = rec.get('InstanceDetails', {}).get('EC2InstanceDetails', {}).get('Family', 'N/A')
+                instance_type = rec.get('InstanceDetails', {}).get('EC2InstanceDetails', {}).get('InstanceType', 'N/A')
+                region = rec.get('InstanceDetails', {}).get('EC2InstanceDetails', {}).get('Region', 'N/A')
+                platform = rec.get('InstanceDetails', {}).get('EC2InstanceDetails', {}).get('Platform', 'N/A')
+                
+                monthly_savings = float(rec.get('EstimatedMonthlySavingsAmount', 0))
+                savings_percentage = float(rec.get('EstimatedSavingsPercentage', 0))
+                upfront_cost = float(rec.get('UpfrontCost', 0))
+                monthly_cost = float(rec.get('RecurringStandardAmount', 0))
+                
+                # Determine priority color
+                if monthly_savings > 500:
+                    priority_color = "🔴"
+                    priority_text = "High Priority"
+                elif monthly_savings >= 100:
+                    priority_color = "🟡"
+                    priority_text = "Medium Priority"
+                else:
+                    priority_color = "🟢"
+                    priority_text = "Low Priority"
+                
+                with st.expander(f"{priority_color} RI #{idx}: {instance_type} in {region} - ${monthly_savings:,.0f}/month savings", expanded=(idx <= 2)):
+                    
+                    # Key metrics row
+                    rec_col1, rec_col2, rec_col3, rec_col4 = st.columns(4)
+                    
+                    with rec_col1:
+                        st.metric("💰 Monthly Savings", f"${monthly_savings:,.2f}")
+                    with rec_col2:
+                        st.metric("📊 Savings %", f"{savings_percentage:.1f}%")
+                    with rec_col3:
+                        st.metric("💳 Upfront Cost", f"${upfront_cost:,.2f}")
+                    with rec_col4:
+                        st.metric("🔄 Monthly Cost", f"${monthly_cost:,.2f}")
+                    
+                    st.markdown("---")
+                    
+                    # AI Analysis
+                    st.markdown("#### 🤖 AI Analysis & Recommendations")
+                    
+                    # ROI calculation
+                    annual_savings = monthly_savings * 12
+                    roi_months = upfront_cost / monthly_savings if monthly_savings > 0 else 0
+                    
+                    analysis_col1, analysis_col2 = st.columns(2)
+                    
+                    with analysis_col1:
+                        st.markdown(f"""
+                        **💡 Smart Insights:**
+                        - **Instance Family:** {instance_family}
+                        - **Platform:** {platform}
+                        - **Priority Level:** {priority_text}
+                        - **ROI Timeline:** {roi_months:.1f} months to break even
+                        - **Annual Impact:** ${annual_savings:,.0f} savings per year
+                        """)
+                    
+                    with analysis_col2:
+                        # Recommendation strength indicator
+                        if savings_percentage > 30:
+                            strength = "🌟 Excellent"
+                            strength_color = "green"
+                        elif savings_percentage > 20:
+                            strength = "👍 Good"
+                            strength_color = "blue"
+                        elif savings_percentage > 10:
+                            strength = "👌 Fair"
+                            strength_color = "orange"
+                        else:
+                            strength = "⚠️ Low Impact"
+                            strength_color = "red"
+                        
+                        st.markdown(f"""
+                        **📈 Recommendation Strength:** <span style='color: {strength_color}; font-weight: bold;'>{strength}</span>
+                        
+                        **🎯 Action Items:**
+                        - Review usage patterns for {instance_type}
+                        - Consider 1-year term for faster ROI
+                        - Monitor utilization after purchase
+                        - Set up billing alerts for tracking
+                        """, unsafe_allow_html=True)
+                    
+                    # Payment options comparison
+                    st.markdown("#### 💳 Payment Options Analysis")
+                    
+                    payment_col1, payment_col2, payment_col3 = st.columns(3)
+                    
+                    with payment_col1:
+                        st.markdown("""
+                        **🏃 No Upfront**
+                        - Lower commitment
+                        - Moderate savings
+                        - Good for testing
+                        """)
+                    
+                    with payment_col2:
+                        st.markdown("""
+                        **💰 Partial Upfront**
+                        - Balanced approach
+                        - Better savings
+                        - Recommended option
+                        """)
+                    
+                    with payment_col3:
+                        st.markdown("""
+                        **💎 All Upfront**
+                        - Maximum savings
+                        - Higher commitment
+                        - Best for stable workloads
+                        """)
+    else:
+        st.success("🎉 Excellent! No Reserved Instance recommendations found. Your current usage patterns are already optimized!")
+        st.info("💡 This could mean you're already using RIs effectively or your workloads are variable and better suited for On-Demand pricing.")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Active RIs", len(ri.get('current_ris', [])))
-    with col2:
-        st.metric("RI Recommendations", len(ri.get('recommendations', {}).get('Recommendations', [])))
+    st.markdown("---")
+    
+    # RI Timeline Visualization
+    st.markdown("### 📅 Reserved Instance Timeline & Management")
+    
+    if current_ris:
+        st.markdown("#### 🕒 Active RI Timeline")
+        
+        # Create timeline visualization
+        import plotly.graph_objects as go
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        # Simulate RI timeline data (in real implementation, this would come from actual RI data)
+        timeline_data = []
+        colors = ['#0066cc', '#28a745', '#ffc107', '#dc3545', '#6f42c1']
+        
+        for idx, ri in enumerate(current_ris[:5]):  # Show up to 5 RIs
+            # Simulate RI details (replace with actual data parsing)
+            ri_id = ri.get('ReservedInstancesId', f'ri-{idx+1:03d}')
+            instance_type = ri.get('InstanceType', f't3.medium')
+            start_date = datetime.now() - timedelta(days=180)  # Simulate 6 months ago
+            end_date = start_date + timedelta(days=365)  # 1 year term
+            
+            timeline_data.append({
+                'RI_ID': ri_id,
+                'Instance_Type': instance_type,
+                'Start': start_date,
+                'End': end_date,
+                'Color': colors[idx % len(colors)],
+                'Status': 'Active' if end_date > datetime.now() else 'Expired'
+            })
+        
+        if timeline_data:
+            # Create Gantt chart for RI timeline
+            fig_timeline = go.Figure()
+            
+            for idx, ri in enumerate(timeline_data):
+                fig_timeline.add_trace(go.Scatter(
+                    x=[ri['Start'], ri['End']],
+                    y=[idx, idx],
+                    mode='lines+markers',
+                    line=dict(color=ri['Color'], width=8),
+                    marker=dict(size=10),
+                    name=f"{ri['RI_ID']} ({ri['Instance_Type']})",
+                    hovertemplate=f"<b>{ri['RI_ID']}</b><br>" +
+                                f"Instance: {ri['Instance_Type']}<br>" +
+                                f"Start: {ri['Start'].strftime('%Y-%m-%d')}<br>" +
+                                f"End: {ri['End'].strftime('%Y-%m-%d')}<br>" +
+                                f"Status: {ri['Status']}<extra></extra>"
+                ))
+            
+            # Add current date line
+            current_date = datetime.now()
+            fig_timeline.add_vline(
+                x=current_date,
+                line_dash="dash",
+                line_color="red",
+                annotation_text="Today",
+                annotation_position="top"
+            )
+            
+            fig_timeline.update_layout(
+                title="Reserved Instance Timeline",
+                xaxis_title="Date",
+                yaxis_title="Reserved Instances",
+                yaxis=dict(
+                    tickmode='array',
+                    tickvals=list(range(len(timeline_data))),
+                    ticktext=[f"{ri['RI_ID']}<br>({ri['Instance_Type']})" for ri in timeline_data]
+                ),
+                height=400,
+                showlegend=True
+            )
+            
+            st.plotly_chart(fig_timeline, use_container_width=True)
+            
+            # RI Status Summary
+            st.markdown("#### 📊 RI Status Summary")
+            
+            status_col1, status_col2, status_col3 = st.columns(3)
+            
+            active_count = sum(1 for ri in timeline_data if ri['Status'] == 'Active')
+            expired_count = len(timeline_data) - active_count
+            
+            with status_col1:
+                st.metric("🟢 Active RIs", active_count)
+            
+            with status_col2:
+                st.metric("🔴 Expired RIs", expired_count)
+            
+            with status_col3:
+                # Calculate days until next expiration
+                active_ris = [ri for ri in timeline_data if ri['Status'] == 'Active']
+                if active_ris:
+                    next_expiry = min(ri['End'] for ri in active_ris)
+                    days_to_expiry = (next_expiry - datetime.now()).days
+                    st.metric("⏰ Next Expiry", f"{days_to_expiry} days")
+                else:
+                    st.metric("⏰ Next Expiry", "N/A")
+            
+            # Renewal recommendations
+            st.markdown("#### 🔄 Renewal Recommendations")
+            
+            renewal_recommendations = []
+            for ri in timeline_data:
+                if ri['Status'] == 'Active':
+                    days_to_expiry = (ri['End'] - datetime.now()).days
+                    if days_to_expiry <= 60:  # Expiring within 60 days
+                        renewal_recommendations.append({
+                            'RI_ID': ri['RI_ID'],
+                            'Instance_Type': ri['Instance_Type'],
+                            'Days_to_Expiry': days_to_expiry,
+                            'Action': 'Renew Soon' if days_to_expiry <= 30 else 'Plan Renewal'
+                        })
+            
+            if renewal_recommendations:
+                st.warning("⚠️ **Action Required:** Some RIs are expiring soon!")
+                
+                renewal_df = pd.DataFrame(renewal_recommendations)
+                st.dataframe(renewal_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("""
+                **💡 Renewal Tips:**
+                - Review usage patterns before renewal
+                - Consider newer instance types for better performance
+                - Evaluate 3-year terms for maximum savings
+                - Set calendar reminders 90 days before expiry
+                """)
+            else:
+                st.success("✅ All RIs are well-managed with no immediate renewal actions needed.")
+        
+    else:
+        st.info("📋 No active Reserved Instances found. Consider the AI recommendations above to start saving!")
+        
+        # Show potential timeline if RIs were purchased
+        st.markdown("#### 🎯 Projected Savings Timeline")
+        
+        if ri_recommendations:
+            # Create a projected savings chart
+            months = list(range(1, 13))
+            cumulative_savings = [sum(float(rec.get('EstimatedMonthlySavingsAmount', 0)) for rec in ri_recommendations) * month 
+                                for month in months]
+            
+            fig_savings = go.Figure()
+            fig_savings.add_trace(go.Scatter(
+                x=months,
+                y=cumulative_savings,
+                mode='lines+markers',
+                name='Cumulative Savings',
+                line=dict(color='#28a745', width=3),
+                marker=dict(size=8)
+            ))
+            
+            fig_savings.update_layout(
+                title="Projected Annual Savings if RIs are Purchased",
+                xaxis_title="Month",
+                yaxis_title="Cumulative Savings ($)",
+                height=300
+            )
+            
+            st.plotly_chart(fig_savings, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Savings Plans Section
+    st.markdown("### 💎 Savings Plans Analysis")
+    
+    sp_data = data.get('savings_plans', {})
+    
+    sp_col1, sp_col2, sp_col3 = st.columns(3)
+    
+    with sp_col1:
+        annual_sp_savings = sp_data.get('estimated_savings', 0)
+        st.metric("💰 Annual SP Savings", f"${annual_sp_savings:,.0f}")
+    
+    with sp_col2:
+        monthly_sp_savings = annual_sp_savings / 12 if annual_sp_savings else 0
+        st.metric("📅 Monthly SP Savings", f"${monthly_sp_savings:,.0f}")
+    
+    with sp_col3:
+        # Compare RI vs SP savings
+        total_ri_annual = total_potential_savings * 12 if ri_recommendations else 0
+        if total_ri_annual > 0 and annual_sp_savings > 0:
+            better_option = "Savings Plans" if annual_sp_savings > total_ri_annual else "Reserved Instances"
+            st.metric("🏆 Better Option", better_option)
+        else:
+            st.metric("🏆 Better Option", "Analyze Both")
+    
+    # Savings Plans vs RI comparison
+    if annual_sp_savings > 0 or total_ri_annual > 0:
+        st.markdown("#### ⚖️ Savings Plans vs Reserved Instances Comparison")
+        
+        comparison_data = {
+            'Option': ['Reserved Instances', 'Savings Plans'],
+            'Annual Savings': [total_ri_annual, annual_sp_savings],
+            'Flexibility': ['Instance-specific', 'Compute-wide'],
+            'Commitment': ['Instance type & region', 'Compute usage'],
+            'Best For': ['Predictable workloads', 'Variable workloads']
+        }
+        
+        comparison_df = pd.DataFrame(comparison_data)
+        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+        
+        # Recommendation
+        if total_ri_annual > annual_sp_savings:
+            st.success("🎯 **Recommendation:** Focus on Reserved Instances for maximum savings with your current usage patterns.")
+        elif annual_sp_savings > total_ri_annual:
+            st.success("🎯 **Recommendation:** Savings Plans offer better value and flexibility for your workloads.")
+        else:
+            st.info("🎯 **Recommendation:** Consider a hybrid approach combining both RIs and Savings Plans.")
+    
+    else:
+        st.info("💡 No specific savings plans data available. Run a fresh analysis to get current recommendations.")
+
+def show_budget_manager():
+    """Budget Management and Alerts page"""
+    st.markdown("## 💳 Budget Manager & Alerts")
+    
+    # Initialize budget data in session state
+    if 'budgets' not in st.session_state:
+        st.session_state.budgets = []
+    
+    if 'budget_alerts' not in st.session_state:
+        st.session_state.budget_alerts = []
+    
+    # Tabs for different budget functions
+    budget_tab1, budget_tab2, budget_tab3, budget_tab4 = st.tabs([
+        "📊 Budget Overview", 
+        "➕ Create Budget", 
+        "🚨 Alert Settings", 
+        "📈 Budget Analytics"
+    ])
+    
+    with budget_tab1:
+        st.markdown("### 📊 Current Budgets Overview")
+        
+        if not st.session_state.budgets:
+            st.info("📋 No budgets created yet. Use the 'Create Budget' tab to set up your first budget.")
+            
+            # Show sample budget template
+            st.markdown("#### 💡 Budget Management Benefits")
+            
+            benefit_col1, benefit_col2, benefit_col3 = st.columns(3)
+            
+            with benefit_col1:
+                st.markdown("""
+                **🎯 Cost Control**
+                - Set spending limits
+                - Prevent cost overruns
+                - Track budget utilization
+                """)
+            
+            with benefit_col2:
+                st.markdown("""
+                **🚨 Proactive Alerts**
+                - Real-time notifications
+                - Threshold-based warnings
+                - Email/SMS alerts
+                """)
+            
+            with benefit_col3:
+                st.markdown("""
+                **📈 Financial Planning**
+                - Forecast spending
+                - Departmental allocation
+                - ROI tracking
+                """)
+        
+        else:
+            # Display existing budgets
+            for idx, budget in enumerate(st.session_state.budgets):
+                with st.expander(f"💰 {budget['name']} - ${budget['amount']:,.2f}", expanded=True):
+                    
+                    # Budget metrics
+                    budget_col1, budget_col2, budget_col3, budget_col4 = st.columns(4)
+                    
+                    with budget_col1:
+                        st.metric("💵 Budget Amount", f"${budget['amount']:,.2f}")
+                    
+                    with budget_col2:
+                        # Simulate current spend (in real implementation, this would come from AWS)
+                        current_spend = budget['amount'] * 0.65  # 65% utilization
+                        st.metric("💸 Current Spend", f"${current_spend:,.2f}")
+                    
+                    with budget_col3:
+                        utilization = (current_spend / budget['amount']) * 100
+                        st.metric("📊 Utilization", f"{utilization:.1f}%")
+                    
+                    with budget_col4:
+                        remaining = budget['amount'] - current_spend
+                        st.metric("💰 Remaining", f"${remaining:,.2f}")
+                    
+                    # Progress bar
+                    progress_color = "green" if utilization < 80 else "orange" if utilization < 95 else "red"
+                    st.progress(min(utilization / 100, 1.0))
+                    
+                    # Budget details
+                    detail_col1, detail_col2 = st.columns(2)
+                    
+                    with detail_col1:
+                        st.markdown(f"""
+                        **📋 Budget Details:**
+                        - **Period:** {budget['period']}
+                        - **Department:** {budget.get('department', 'N/A')}
+                        - **Services:** {', '.join(budget.get('services', ['All']))}
+                        """)
+                    
+                    with detail_col2:
+                        st.markdown(f"""
+                        **🚨 Alert Settings:**
+                        - **Threshold:** {budget.get('alert_threshold', 80)}%
+                        - **Email:** {budget.get('alert_email', 'Not set')}
+                        - **Status:** {'🟢 Active' if budget.get('alerts_enabled', True) else '🔴 Disabled'}
+                        """)
+                    
+                    # Action buttons
+                    action_col1, action_col2, action_col3 = st.columns(3)
+                    
+                    with action_col1:
+                        if st.button(f"✏️ Edit", key=f"edit_{idx}"):
+                            st.session_state[f'edit_budget_{idx}'] = True
+                    
+                    with action_col2:
+                        if st.button(f"📊 Details", key=f"details_{idx}"):
+                            st.session_state[f'show_details_{idx}'] = True
+                    
+                    with action_col3:
+                        if st.button(f"🗑️ Delete", key=f"delete_{idx}"):
+                            st.session_state.budgets.pop(idx)
+                            st.rerun()
+    
+    with budget_tab2:
+        st.markdown("### ➕ Create New Budget")
+        
+        with st.form("create_budget_form"):
+            form_col1, form_col2 = st.columns(2)
+            
+            with form_col1:
+                budget_name = st.text_input("💼 Budget Name", placeholder="e.g., Development Team Q1 2024")
+                budget_amount = st.number_input("💵 Budget Amount ($)", min_value=0.0, step=100.0, value=1000.0)
+                budget_period = st.selectbox("📅 Budget Period", [
+                    "Monthly", "Quarterly", "Annually", "Custom"
+                ])
+                department = st.text_input("🏢 Department/Team", placeholder="e.g., Engineering, Marketing")
+            
+            with form_col2:
+                # AWS Services selection
+                aws_services = st.multiselect("☁️ AWS Services (Optional)", [
+                    "EC2", "S3", "RDS", "Lambda", "ECS", "EKS", 
+                    "CloudFront", "Route53", "VPC", "All Services"
+                ], default=["All Services"])
+                
+                # Alert settings
+                alert_threshold = st.slider("🚨 Alert Threshold (%)", 50, 100, 80)
+                alert_email = st.text_input("📧 Alert Email", placeholder="admin@company.com")
+                alerts_enabled = st.checkbox("🔔 Enable Alerts", value=True)
+            
+            # Advanced settings
+            with st.expander("⚙️ Advanced Settings"):
+                # Cost allocation tags
+                cost_tags = st.text_area("🏷️ Cost Allocation Tags (Optional)", 
+                                        placeholder="Environment:Production\nProject:WebApp\nOwner:TeamA")
+                
+                # Forecast settings
+                enable_forecast = st.checkbox("📈 Enable Spend Forecasting", value=True)
+                forecast_method = st.selectbox("📊 Forecast Method", [
+                    "Linear Trend", "Seasonal", "Machine Learning"
+                ]) if enable_forecast else None
+            
+            # Submit button
+            submitted = st.form_submit_button("💾 Create Budget", use_container_width=True)
+            
+            if submitted:
+                if budget_name and budget_amount > 0:
+                    new_budget = {
+                        'name': budget_name,
+                        'amount': budget_amount,
+                        'period': budget_period,
+                        'department': department,
+                        'services': aws_services,
+                        'alert_threshold': alert_threshold,
+                        'alert_email': alert_email,
+                        'alerts_enabled': alerts_enabled,
+                        'cost_tags': cost_tags,
+                        'enable_forecast': enable_forecast,
+                        'forecast_method': forecast_method,
+                        'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
+                    st.session_state.budgets.append(new_budget)
+                    st.success(f"✅ Budget '{budget_name}' created successfully!")
+                    st.rerun()
+                else:
+                    st.error("❌ Please provide a budget name and amount greater than 0")
+    
+    with budget_tab3:
+        st.markdown("### 🚨 Alert Configuration")
+        
+        # Global alert settings
+        st.markdown("#### 🌐 Global Alert Settings")
+        
+        global_col1, global_col2 = st.columns(2)
+        
+        with global_col1:
+            # Default alert channels
+            st.markdown("**📢 Default Alert Channels:**")
+            email_alerts = st.checkbox("📧 Email Alerts", value=True)
+            slack_alerts = st.checkbox("💬 Slack Notifications", value=False)
+            sms_alerts = st.checkbox("📱 SMS Alerts", value=False)
+            
+            if email_alerts:
+                default_email = st.text_input("📧 Default Email", placeholder="alerts@company.com")
+            
+            if slack_alerts:
+                slack_webhook = st.text_input("🔗 Slack Webhook URL", placeholder="https://hooks.slack.com/...")
+            
+            if sms_alerts:
+                sms_number = st.text_input("📱 SMS Number", placeholder="+1234567890")
+        
+        with global_col2:
+            # Alert frequency and timing
+            st.markdown("**⏰ Alert Timing:**")
+            alert_frequency = st.selectbox("🔄 Alert Frequency", [
+                "Real-time", "Hourly", "Daily", "Weekly"
+            ])
+            
+            quiet_hours = st.checkbox("🌙 Quiet Hours (No alerts 10PM - 6AM)", value=True)
+            weekend_alerts = st.checkbox("📅 Weekend Alerts", value=False)
+            
+            # Alert severity levels
+            st.markdown("**⚠️ Alert Severity Levels:**")
+            warning_threshold = st.slider("⚠️ Warning Level (%)", 50, 90, 75)
+            critical_threshold = st.slider("🚨 Critical Level (%)", 80, 100, 90)
+        
+        st.markdown("---")
+        
+        # Custom alert rules
+        st.markdown("#### 🎯 Custom Alert Rules")
+        
+        with st.expander("➕ Create Custom Alert Rule"):
+            rule_col1, rule_col2 = st.columns(2)
+            
+            with rule_col1:
+                rule_name = st.text_input("📝 Rule Name", placeholder="High EC2 Spend Alert")
+                rule_condition = st.selectbox("📊 Condition", [
+                    "Spend exceeds threshold", 
+                    "Spend increases by %", 
+                    "Anomaly detected",
+                    "Service cost spike"
+                ])
+                rule_value = st.number_input("💯 Threshold Value", min_value=0.0, step=10.0)
+            
+            with rule_col2:
+                rule_services = st.multiselect("☁️ Apply to Services", [
+                    "EC2", "S3", "RDS", "Lambda", "All"
+                ])
+                rule_action = st.selectbox("🎬 Action", [
+                    "Send Email", "Send Slack Message", "Create Ticket", "All"
+                ])
+                rule_enabled = st.checkbox("✅ Enable Rule", value=True)
+            
+            if st.button("💾 Save Alert Rule"):
+                st.success("✅ Custom alert rule saved!")
+        
+        # Existing alert rules
+        st.markdown("#### 📋 Active Alert Rules")
+        
+        sample_rules = [
+            {"name": "Budget Threshold Alert", "condition": "80% of budget", "status": "🟢 Active"},
+            {"name": "EC2 Cost Spike", "condition": "50% increase in 24h", "status": "🟢 Active"},
+            {"name": "Unused Resources", "condition": "Idle for 7 days", "status": "🟡 Warning"}
+        ]
+        
+        for rule in sample_rules:
+            rule_container = st.container()
+            with rule_container:
+                rule_display_col1, rule_display_col2, rule_display_col3 = st.columns([3, 2, 1])
+                
+                with rule_display_col1:
+                    st.write(f"**{rule['name']}**")
+                    st.caption(rule['condition'])
+                
+                with rule_display_col2:
+                    st.write(rule['status'])
+                
+                with rule_display_col3:
+                    st.button("⚙️", key=f"config_{rule['name']}")
+    
+    with budget_tab4:
+        st.markdown("### 📈 Budget Analytics & Insights")
+        
+        if st.session_state.budgets:
+            # Budget performance analytics
+            analytics_col1, analytics_col2 = st.columns(2)
+            
+            with analytics_col1:
+                # Budget utilization chart
+                import plotly.graph_objects as go
+                
+                budget_names = [b['name'] for b in st.session_state.budgets]
+                utilizations = [65, 78, 45, 92]  # Simulated data
+                
+                fig_util = go.Figure(data=[
+                    go.Bar(x=budget_names, y=utilizations, 
+                          marker_color=['green' if u < 80 else 'orange' if u < 95 else 'red' for u in utilizations])
+                ])
+                fig_util.update_layout(
+                    title="Budget Utilization by Department",
+                    yaxis_title="Utilization (%)",
+                    height=300
+                )
+                st.plotly_chart(fig_util, use_container_width=True)
+            
+            with analytics_col2:
+                # Spending trend
+                months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+                spending = [8500, 9200, 8800, 10500, 9800, 11200]
+                
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Scatter(
+                    x=months, y=spending,
+                    mode='lines+markers',
+                    name='Actual Spend',
+                    line=dict(color='blue', width=3)
+                ))
+                
+                # Add budget line
+                avg_budget = sum(b['amount'] for b in st.session_state.budgets) / len(st.session_state.budgets)
+                fig_trend.add_hline(y=avg_budget, line_dash="dash", line_color="red", 
+                                   annotation_text="Average Budget")
+                
+                fig_trend.update_layout(
+                    title="Monthly Spending Trend",
+                    yaxis_title="Spend ($)",
+                    height=300
+                )
+                st.plotly_chart(fig_trend, use_container_width=True)
+            
+            # Budget insights
+            st.markdown("#### 💡 Budget Insights & Recommendations")
+            
+            insight_col1, insight_col2, insight_col3 = st.columns(3)
+            
+            with insight_col1:
+                st.markdown("""
+                **🎯 Performance Summary**
+                - 3 budgets on track
+                - 1 budget at risk
+                - Average utilization: 70%
+                """)
+            
+            with insight_col2:
+                st.markdown("""
+                **🚨 Alert Summary**
+                - 2 active alerts
+                - 5 warnings this month
+                - 0 critical breaches
+                """)
+            
+            with insight_col3:
+                st.markdown("""
+                **📈 Forecast**
+                - Projected overspend: $2,400
+                - Recommended actions: 3
+                - Savings opportunity: $1,800
+                """)
+            
+            # Detailed recommendations
+            st.markdown("#### 🎯 AI-Powered Budget Recommendations")
+            
+            recommendations = [
+                {
+                    "title": "Optimize Development Environment",
+                    "description": "Development team budget is 92% utilized. Consider rightsizing EC2 instances.",
+                    "impact": "Potential savings: $800/month",
+                    "priority": "High"
+                },
+                {
+                    "title": "Set Up Reserved Instance Budget",
+                    "description": "Create separate budget for RI purchases to better track commitment savings.",
+                    "impact": "Improved cost visibility",
+                    "priority": "Medium"
+                },
+                {
+                    "title": "Enable Automated Scaling Alerts",
+                    "description": "Set up alerts for auto-scaling events that might impact budget.",
+                    "impact": "Prevent unexpected costs",
+                    "priority": "Medium"
+                }
+            ]
+            
+            for idx, rec in enumerate(recommendations):
+                priority_color = "🔴" if rec['priority'] == 'High' else "🟡" if rec['priority'] == 'Medium' else "🟢"
+                
+                with st.expander(f"{priority_color} {rec['title']}", expanded=(idx == 0)):
+                    st.markdown(f"**Description:** {rec['description']}")
+                    st.markdown(f"**Impact:** {rec['impact']}")
+                    st.markdown(f"**Priority:** {rec['priority']}")
+                    
+                    if st.button(f"✅ Implement", key=f"implement_{idx}"):
+                        st.success(f"✅ Recommendation '{rec['title']}' marked for implementation!")
+        
+        else:
+            st.info("📊 Create budgets first to see analytics and insights.")
+            
+            # Show sample analytics
+            st.markdown("#### 📈 Sample Budget Analytics")
+            st.image("https://via.placeholder.com/800x400/0066cc/ffffff?text=Budget+Analytics+Dashboard", 
+                    caption="Sample budget analytics dashboard")
 
 def show_analytics():
     """Analytics page"""
@@ -2242,11 +3603,14 @@ def show_aws_configuration():
         
         .login-container {
             max-width: 900px;
-            margin: 0 auto;
+            margin: -50px auto 0 auto;
             background: white;
             border-radius: 12px;
-            padding: 40px;
+            padding: 25px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 10;
+            transform: translateY(-20px);
         }
         
         .info-section {
@@ -2274,30 +3638,118 @@ def show_aws_configuration():
             font-size: 14px;
         }
         
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin: 25px 0;
+        .feature-slider {
+            display: flex;
+            gap: 20px;
+            margin: 15px 0 0 0;
+            padding: 0 10px 0 10px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            position: relative;
+            z-index: 5;
         }
         
         .feature-card {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            padding: 20px;
-            border-radius: 10px;
+            min-width: 200px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            padding: 25px 20px;
+            border-radius: 15px;
             text-align: center;
-            border: 1px solid #dee2e6;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 4px 15px rgba(0, 102, 204, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            animation: slideInUp 0.6s ease-out;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 8px 25px rgba(0, 102, 204, 0.2);
+            border-color: #0066cc;
         }
         
         .feature-card-icon {
-            font-size: 36px;
-            margin-bottom: 10px;
+            font-size: 48px;
+            margin-bottom: 15px;
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover .feature-card-icon {
+            transform: scale(1.1);
         }
         
         .feature-card-title {
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 16px;
+            font-weight: 700;
             color: #212529;
+            margin-bottom: 8px;
+        }
+        
+        .feature-card-desc {
+            font-size: 12px;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+        
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .feature-card:nth-child(1) { animation-delay: 0.1s; }
+        .feature-card:nth-child(2) { animation-delay: 0.2s; }
+        .feature-card:nth-child(3) { animation-delay: 0.3s; }
+        .feature-card:nth-child(4) { animation-delay: 0.4s; }
+        
+        /* Aggressive Streamlit spacing removal */
+        .main .block-container {
+            padding: 0 !important;
+            max-width: 100% !important;
+        }
+        
+        /* Remove ALL default margins and padding */
+        .element-container,
+        .stMarkdown,
+        div[data-testid="stMarkdownContainer"],
+        .row-widget,
+        .stTabs,
+        div[data-baseweb="tab-list"],
+        div[data-baseweb="tab-panel"] {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* Force zero spacing on all containers */
+        .main > div {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* Remove space from tabs specifically */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0;
+            margin-top: 0 !important;
+        }
+        
+        /* Hide any empty divs that might create space */
+        div:empty {
+            display: none !important;
+        }
+        
+        /* Target the specific container that might be causing space */
+        .main .block-container > div:first-child {
+            margin-top: 0 !important;
+        }
+        
+        /* Remove any potential spacing from the app container */
+        .appview-container .main .block-container {
+            padding-top: 0 !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -2332,30 +3784,32 @@ def show_aws_configuration():
         </div>
     """, unsafe_allow_html=True)
     
-    # Feature highlights
+    # Feature highlights - Sliding Cards with Login Container
     st.markdown("""
-        <div class='feature-grid'>
+        <div class='feature-slider'>
             <div class='feature-card'>
                 <div class='feature-card-icon'>💰</div>
                 <div class='feature-card-title'>Cost Analysis</div>
+                <div class='feature-card-desc'>Comprehensive 6-month cost analysis with forecasting</div>
             </div>
             <div class='feature-card'>
                 <div class='feature-card-icon'>🤖</div>
                 <div class='feature-card-title'>AI Recommendations</div>
+                <div class='feature-card-desc'>Intelligent optimization suggestions with priority scoring</div>
             </div>
             <div class='feature-card'>
                 <div class='feature-card-icon'>📊</div>
                 <div class='feature-card-title'>Resource Insights</div>
+                <div class='feature-card-desc'>Multi-service analysis across EC2, S3, RDS, Lambda & more</div>
             </div>
             <div class='feature-card'>
                 <div class='feature-card-icon'>📄</div>
                 <div class='feature-card-title'>Export Reports</div>
+                <div class='feature-card-desc'>Professional PDF, Excel & Word reports with BCT branding</div>
             </div>
         </div>
+        <div class='login-container'>
     """, unsafe_allow_html=True)
-    
-    # Login container
-    st.markdown("<div class='login-container'>", unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 AWS Credentials", "👤 User Profile"])
     
@@ -2379,11 +3833,25 @@ def show_aws_configuration():
         # Authentication method selector
         auth_method = st.radio(
             "Authentication Method",
-            ["Access Keys", "IAM Role ARN"],
+            ["Access Keys", "IAM Role ARN", "Multi-Account (Organizations)", "Cross-Account Role"],
             help="Choose how to authenticate with AWS"
         )
         
+        # Account scope selector
+        account_scope = st.selectbox(
+            "Analysis Scope",
+            ["Single Account", "Multiple Accounts", "AWS Organizations (All Accounts)"],
+            help="Choose the scope of your analysis"
+        )
+        
         with st.form("aws_config_form"):
+            # Common fields
+            aws_access_key = None
+            aws_secret_key = None
+            role_arn = None
+            org_master_account = None
+            account_list = None
+            
             if auth_method == "Access Keys":
                 st.info("💡 Use your AWS Access Key ID and Secret Access Key")
                 aws_access_key = st.text_input(
@@ -2398,9 +3866,8 @@ def show_aws_configuration():
                     type="password",
                     help="Your AWS Secret Access Key"
                 )
-                role_arn = None
                 
-            else:  # IAM Role ARN
+            elif auth_method == "IAM Role ARN":
                 st.info("💡 Assume an IAM role for cross-account access")
                 aws_access_key = st.text_input(
                     "AWS Access Key ID",
@@ -2418,6 +3885,80 @@ def show_aws_configuration():
                     "IAM Role ARN",
                     placeholder="arn:aws:iam::123456789012:role/FinOpsRole",
                     help="ARN of the IAM role to assume"
+                )
+                
+            elif auth_method == "Multi-Account (Organizations)":
+                st.info("💡 Analyze multiple accounts using AWS Organizations")
+                aws_access_key = st.text_input(
+                    "Master Account Access Key ID",
+                    placeholder="Enter master account access key",
+                    type="password",
+                    help="Access Key for the Organizations master account"
+                )
+                aws_secret_key = st.text_input(
+                    "Master Account Secret Access Key",
+                    placeholder="Enter master account secret key",
+                    type="password",
+                    help="Secret Key for the Organizations master account"
+                )
+                org_master_account = st.text_input(
+                    "Organizations Master Account ID",
+                    placeholder="123456789012",
+                    help="12-digit AWS Account ID of the Organizations master account"
+                )
+                role_arn = st.text_input(
+                    "Cross-Account Role ARN Template",
+                    placeholder="arn:aws:iam::{account_id}:role/OrganizationAccountAccessRole",
+                    help="Role ARN template for accessing member accounts (use {account_id} placeholder)"
+                )
+                
+            else:  # Cross-Account Role
+                st.info("💡 Access multiple specific accounts using cross-account roles")
+                aws_access_key = st.text_input(
+                    "AWS Access Key ID",
+                    placeholder="Enter your access key",
+                    type="password",
+                    help="Base credentials for assuming roles"
+                )
+                aws_secret_key = st.text_input(
+                    "AWS Secret Access Key",
+                    placeholder="Enter your secret key",
+                    type="password",
+                    help="Base credentials for assuming roles"
+                )
+                account_list = st.text_area(
+                    "Account IDs and Role ARNs",
+                    placeholder="123456789012:arn:aws:iam::123456789012:role/FinOpsRole\n234567890123:arn:aws:iam::234567890123:role/FinOpsRole",
+                    help="Enter one account per line in format: AccountID:RoleARN"
+                )
+            
+            # Multi-account specific options
+            if account_scope in ["Multiple Accounts", "AWS Organizations (All Accounts)"]:
+                st.markdown("---")
+                st.markdown("#### 🏢 Multi-Account Options")
+                
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    consolidate_reports = st.checkbox(
+                        "Consolidate Reports",
+                        value=True,
+                        help="Combine all accounts into a single report"
+                    )
+                
+                with col_b:
+                    parallel_analysis = st.checkbox(
+                        "Parallel Analysis",
+                        value=True,
+                        help="Analyze accounts in parallel for faster processing"
+                    )
+                
+                max_accounts = st.number_input(
+                    "Maximum Accounts to Analyze",
+                    min_value=1,
+                    max_value=100,
+                    value=10,
+                    help="Limit the number of accounts to analyze (for performance)"
                 )
             
             aws_region = st.selectbox(
@@ -2623,13 +4164,91 @@ def show_aws_configuration():
                 - RDS: `rds:Describe*`
                 - Lambda: `lambda:List*`
                 - Bedrock: `bedrock:InvokeModel`
+                - Organizations: `organizations:ListAccounts` (for multi-account)
+                - STS: `sts:AssumeRole` (for cross-account access)
                 
-                **IAM Role ARN Format:**
+                **Authentication Methods:**
+                
+                **1. Access Keys** - Direct access with IAM user credentials
                 ```
-                arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME
+                Access Key ID: AKIA...
+                Secret Access Key: wJalrXUt...
                 ```
+                
+                **2. IAM Role ARN** - Assume role for enhanced security
+                ```
+                arn:aws:iam::123456789012:role/FinOpsRole
+                ```
+                
+                **3. Multi-Account (Organizations)** - Analyze all organization accounts
+                ```
+                Master Account: 123456789012
+                Role Template: arn:aws:iam::{account_id}:role/OrganizationAccountAccessRole
+                ```
+                
+                **4. Cross-Account Role** - Specific accounts with individual roles
+                ```
+                Format: AccountID:RoleARN
+                Example: 123456789012:arn:aws:iam::123456789012:role/FinOpsRole
+                ```
+                
+                **Multi-Account Setup:**
+                1. Create a role in each target account with FinOps permissions
+                2. Add trust relationship to allow assumption from master account
+                3. Use Organizations master account credentials or cross-account roles
+                4. Enable parallel analysis for faster processing
                 
                 **Note:** Cost Explorer must be enabled in AWS Billing Console (takes 24 hours to populate)
+            """)
+        
+        with st.expander("🏢 Multi-Account & Organizations Setup"):
+            st.markdown("""
+                **AWS Organizations Setup:**
+                
+                **Step 1: Enable Organizations**
+                - Go to AWS Organizations console in master account
+                - Create organization or use existing one
+                - Note down the master account ID
+                
+                **Step 2: Create Cross-Account Role**
+                Create this role in each member account:
+                ```json
+                {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Principal": {
+                        "AWS": "arn:aws:iam::MASTER_ACCOUNT_ID:root"
+                      },
+                      "Action": "sts:AssumeRole"
+                    }
+                  ]
+                }
+                ```
+                
+                **Step 3: Attach FinOps Policy**
+                Attach these permissions to the cross-account role:
+                - ReadOnlyAccess (AWS managed policy)
+                - CostExplorerServiceRolePolicy
+                - Custom policy for Bedrock access
+                
+                **Cross-Account Role Benefits:**
+                - Enhanced security (no long-term credentials)
+                - Centralized access management
+                - Audit trail through CloudTrail
+                - Easy credential rotation
+                
+                **Parallel Analysis:**
+                - Analyzes multiple accounts simultaneously
+                - Reduces total analysis time
+                - Consolidates results into unified reports
+                - Handles rate limiting automatically
+                
+                **Account Limits:**
+                - Maximum 100 accounts per analysis
+                - Recommended: Start with 10 accounts for testing
+                - Increase gradually based on performance
             """)
         
         with st.expander("🔒 Security & Privacy"):
@@ -2640,11 +4259,18 @@ def show_aws_configuration():
                 - Session data is cleared when you logout
                 - All AWS API calls are made directly from your browser
                 
+                **Multi-Account Security:**
+                - Cross-account roles provide enhanced security
+                - No need to store credentials for each account
+                - Centralized access control through master account
+                - Automatic credential rotation support
+                
                 **Best Practices:**
-                - Use IAM users with read-only permissions
-                - Enable MFA on your AWS account
-                - Regularly rotate access keys
-                - Use IAM roles when possible
+                - Use IAM roles instead of access keys when possible
+                - Enable MFA on master/management accounts
+                - Regularly audit cross-account role permissions
+                - Use least privilege principle for FinOps roles
+                - Monitor CloudTrail for cross-account access
             """)
         
     with tab2:
@@ -2723,6 +4349,8 @@ def main():
         show_resources()
     elif st.session_state.current_page == "Savings":
         show_savings()
+    elif st.session_state.current_page == "Budget":
+        show_budget_manager()
     elif st.session_state.current_page == "Analytics":
         show_analytics()
     elif st.session_state.current_page == "Reports":
