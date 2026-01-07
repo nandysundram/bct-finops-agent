@@ -136,3 +136,32 @@ Your BCT FinOps Tool is now deployed and accessible worldwide!
 **Deployment Date:** _____________________
 **Deployed By:** _____________________
 **App URL:** _____________________
+
+## AWS App Runner Deployment (containerized)
+
+### Overview
+- This repository includes a `Dockerfile` and a GitHub Actions workflow at `.github/workflows/deploy-app-runner.yml` which build a container, push it to ECR, and create/update an App Runner service.
+
+### Quick commands (replace placeholders)
+```bash
+# Create ECR repo (optional)
+aws ecr create-repository --repository-name bct-finops-agent --region $AWS_REGION
+
+# Login, build, tag, push
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com
+docker build -t bct-finops-agent .
+docker tag bct-finops-agent:latest <ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/bct-finops-agent:latest
+docker push <ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/bct-finops-agent:latest
+
+# Create App Runner (one-off) or update from workflow
+aws apprunner create-service --service-name bct-finops-agent --source-configuration 'ImageRepository={ImageIdentifier="<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/bct-finops-agent:latest",ImageRepositoryType="ECR",ImageConfiguration={Port="8080"}}'
+```
+
+### GitHub Actions
+- Workflow: `.github/workflows/deploy-app-runner.yml`
+- Required secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ACCOUNT_ID`, and optionally `APP_RUNNER_SERVICE_ARN` to update an existing service.
+- Prefer using GitHub OIDC or a minimal IAM user/role with ECR/App Runner permissions.
+
+**Notes**
+- The Dockerfile runs Streamlit on port `8080` and sets `STREAMLIT_SERVER_HEADLESS=true`.
+- Never commit secrets — use GitHub Secrets or OIDC.
