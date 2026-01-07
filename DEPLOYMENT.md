@@ -160,7 +160,48 @@ aws apprunner create-service --service-name bct-finops-agent --source-configurat
 ### GitHub Actions
 - Workflow: `.github/workflows/deploy-app-runner.yml`
 - Required secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ACCOUNT_ID`, and optionally `APP_RUNNER_SERVICE_ARN` to update an existing service.
+- Optional secret for private ECR: `APP_RUNNER_ACCESS_ROLE_ARN` — when set, the workflow will pass this role ARN to App Runner so it can pull from private ECR repositories (see steps below).
 - Prefer using GitHub OIDC or a minimal IAM user/role with ECR/App Runner permissions.
+
+### If your image is in a private ECR repository
+App Runner needs permission to pull private images. Create an IAM role App Runner can assume and give it ECR read permissions, then set the role ARN as the `APP_RUNNER_ACCESS_ROLE_ARN` repository secret.
+
+Quick role example (replace placeholders):
+
+```bash
+# Trust policy (save as trust.json)
+cat > trust.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "build.apprunner.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# Create role
+aws iam create-role --role-name AppRunnerECRAccessRole --assume-role-policy-document file://trust.json
+
+# Attach inline policy with minimal ECR permissions (save as apprunner-ecr-policy.json)
+cat > apprunner-ecr-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["ecr:GetAuthorizationToken"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"], "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/bct-finops-agent" },
+    { "Effect": "Allow", "Action": ["ecr:DescribeRepositories","ecr:ListImages","ecr:DescribeImages"], "Resource": "*" }
+  ]
+}
+EOF
+
+aws iam put-role-policy --role-name AppRunnerECRAccessRole --policy-name AppRunnerECRPolicy --policy-document file://apprunner-ecr-policy.json
+
+# Copy the role ARN and set it in GitHub Secrets as APP_RUNNER_ACCESS_ROLE_ARN
+```
 
 **Notes**
 - The Dockerfile runs Streamlit on port `8080` and sets `STREAMLIT_SERVER_HEADLESS=true`.

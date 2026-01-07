@@ -38,14 +38,25 @@ jobs:
         env:
           ECR_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/bct-finops-agent:latest
           SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+          ACCESS_ROLE_ARN: ${{ secrets.APP_RUNNER_ACCESS_ROLE_ARN }}
         run: |
           set -e
           if [ -z "$SERVICE_ARN" ]; then
             echo "No APP_RUNNER_SERVICE_ARN provided. Creating App Runner service..."
-            aws apprunner create-service --service-name bct-finops-agent --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}}"
+            if [ -z "$ACCESS_ROLE_ARN" ]; then
+              aws apprunner create-service --service-name bct-finops-agent --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}}"
+            else
+              echo "Using AccessRoleArn: $ACCESS_ROLE_ARN"
+              aws apprunner create-service --service-name bct-finops-agent --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}},AuthenticationConfiguration={AccessRoleArn='$ACCESS_ROLE_ARN'}"
+            fi
           else
             echo "Updating App Runner service: $SERVICE_ARN"
-            aws apprunner update-service --service-arn "$SERVICE_ARN" --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}}"
+            if [ -z "$ACCESS_ROLE_ARN" ]; then
+              aws apprunner update-service --service-arn "$SERVICE_ARN" --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}}"
+            else
+              echo "Using AccessRoleArn: $ACCESS_ROLE_ARN"
+              aws apprunner update-service --service-arn "$SERVICE_ARN" --source-configuration "ImageRepository={ImageIdentifier='$ECR_IMAGE',ImageRepositoryType='ECR',ImageConfiguration={Port='8080'}},AuthenticationConfiguration={AccessRoleArn='$ACCESS_ROLE_ARN'}"
+            fi
           fi
 
       - name: Wait & show service status (optional)
