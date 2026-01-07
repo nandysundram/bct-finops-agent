@@ -52,6 +52,38 @@ jobs:
             echo "APP_RUNNER_ACCESS_ROLE_ARN is set. Proceeding to create/update service with AuthenticationConfiguration."
           fi
 
+      - name: Diagnostic: validate App Runner role & ECR image
+        env:
+          ACCESS_ROLE_ARN: ${{ secrets.APP_RUNNER_ACCESS_ROLE_ARN }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -e
+          if [ -z "$ACCESS_ROLE_ARN" ]; then
+            echo "Skipping role diagnostics because APP_RUNNER_ACCESS_ROLE_ARN is not set."
+            exit 0
+          fi
+
+          echo "Running diagnostics for provided App Runner access role (redacting ARN)"
+          # Extract role name from ARN
+          ROLE_NAME=$(echo "$ACCESS_ROLE_ARN" | awk -F'/' '{print $NF}')
+          echo "Role name: $ROLE_NAME"
+
+          echo "1) Get role"
+          aws iam get-role --role-name "$ROLE_NAME" || true
+
+          echo "2) Assume role policy document"
+          aws iam get-role --role-name "$ROLE_NAME" --query Role.AssumeRolePolicyDocument || true
+
+          echo "3) List inline and attached policies"
+          aws iam list-role-policies --role-name "$ROLE_NAME" || true
+          aws iam list-attached-role-policies --role-name "$ROLE_NAME" || true
+
+          echo "4) Attempt sts:assume-role (may fail if your workflow IAM does not have sts:AssumeRole on this role)"
+          aws sts assume-role --role-arn "$ACCESS_ROLE_ARN" --role-session-name github-actions-debug --duration-seconds 900 || true
+
+          echo "5) Verify ECR image exists"
+          aws ecr describe-images --repository-name bct-finops-agent --image-ids imageTag=latest || aws ecr describe-repositories --repository-names bct-finops-agent || true
+
       - name: Update or create App Runner service
         env:
           ECR_IMAGE: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/bct-finops-agent:latest
