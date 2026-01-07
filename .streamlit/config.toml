@@ -7,8 +7,11 @@ font = "sans serif"
 
 [server]
 headless = true
-port = 8501
-enableCORS = false
+address = "0.0.0.0"
+port = 8080
+# Keep both CORS and XSRF protection enabled for safety. If you need cross-origin embedding,
+# consider disabling XSRF explicitly and understand the security implications.
+enableCORS = true
 enableXsrfProtection = true
 
 [browser]
