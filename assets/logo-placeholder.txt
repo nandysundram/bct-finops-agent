@@ -1,0 +1,17 @@
+CloudXcelAI Logo Placeholder
+
+To add your logo:
+1. Save your logo image as "logo.png" in this folder (assets/)
+2. The logo should be the CloudXcel.AI circular logo with:
+   - White "CloudXcel" text
+   - Blue ".AI" text
+   - Dark/black circular background
+3. Recommended size: 200x200 pixels or similar
+4. Format: PNG with transparent background (recommended)
+
+Once added, the logo will automatically appear in:
+- Main application header (top of page)
+- Sidebar navigation
+
+The application will automatically detect and display the logo when present.
+If no logo is found, text-only branding will be displayed.

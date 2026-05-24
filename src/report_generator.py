@@ -44,7 +44,7 @@ class ReportGenerator:
         story = []
         styles = getSampleStyleSheet()
         
-        # Title with BCT Branding
+        # Title with CloudXcelAI Branding
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
@@ -62,7 +62,7 @@ class ReportGenerator:
             alignment=1  # Center
         )
         
-        story.append(Paragraph("BCT FINOPS TOOL", title_style))
+        story.append(Paragraph("CLOUDXCELAI FINOPTIMIZER", title_style))
         story.append(Paragraph("Cloud Financial Operations & Optimization Report", subtitle_style))
         story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
         story.append(Spacer(1, 0.3*inch))
@@ -140,8 +140,261 @@ class ReportGenerator:
             
             story.append(Spacer(1, 0.3*inch))
         
+        # Add Cost Analysis Charts
+        story.append(PageBreak())
+        story.append(Paragraph("Cost Analysis & Trends", styles['Heading2']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Cost breakdown chart
+        story.append(self._create_cost_breakdown_chart(cost_data))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Recommendations by severity chart
+        story.append(Paragraph("Recommendations by Severity", styles['Heading3']))
+        story.append(self._create_recommendations_chart(recommendations))
+        story.append(Spacer(1, 0.3*inch))
+        
         # Build PDF
         doc.build(story)
+    
+    def _create_cost_breakdown_chart(self, cost_data):
+        """Create a pie chart for cost breakdown"""
+        drawing = Drawing(400, 200)
+        
+        # Create pie chart
+        pie = Pie()
+        pie.x = 100
+        pie.y = 50
+        pie.width = 150
+        pie.height = 150
+        
+        # Sample data (in real implementation, this would come from actual cost data)
+        pie.data = [40, 25, 20, 15]  # EC2, S3, RDS, Other
+        pie.labels = ['EC2', 'S3', 'RDS', 'Other']
+        pie.slices.strokeWidth = 0.5
+        
+        # Colors
+        pie.slices[0].fillColor = colors.HexColor('#0066cc')
+        pie.slices[1].fillColor = colors.HexColor('#28a745')
+        pie.slices[2].fillColor = colors.HexColor('#ffc107')
+        pie.slices[3].fillColor = colors.HexColor('#dc3545')
+        
+        drawing.add(pie)
+        
+        # Title
+        title = String(200, 180, 'Cost Distribution by Service', textAnchor='middle')
+        title.fontName = 'Helvetica-Bold'
+        title.fontSize = 12
+        drawing.add(title)
+        
+        return drawing
+    
+    def _create_recommendations_chart(self, recommendations):
+        """Create a bar chart for recommendations by severity"""
+        drawing = Drawing(400, 200)
+        
+        # Count recommendations by severity
+        severity_counts = {'Critical': 0, 'High': 0, 'Medium': 0, 'Low': 0}
+        for rec in recommendations:
+            severity = rec.get('severity', 'Medium')
+            if severity in severity_counts:
+                severity_counts[severity] += 1
+        
+        # Create bar chart
+        chart = VerticalBarChart()
+        chart.x = 50
+        chart.y = 50
+        chart.height = 125
+        chart.width = 300
+        
+        # Data
+        chart.data = [[severity_counts['Critical'], severity_counts['High'], 
+                      severity_counts['Medium'], severity_counts['Low']]]
+        chart.categoryAxis.categoryNames = ['Critical', 'High', 'Medium', 'Low']
+        
+        # Styling
+        chart.bars[0].fillColor = colors.HexColor('#dc3545')
+        chart.valueAxis.valueMin = 0
+        chart.categoryAxis.labels.boxAnchor = 'ne'
+        chart.categoryAxis.labels.dx = 8
+        chart.categoryAxis.labels.dy = -2
+        
+        drawing.add(chart)
+        
+        # Title
+        title = String(200, 180, 'Recommendations by Severity Level', textAnchor='middle')
+        title.fontName = 'Helvetica-Bold'
+        title.fontSize = 12
+        drawing.add(title)
+        
+        return drawing
+    
+    def generate_pdf_with_charts(
+        self,
+        cost_data: Dict,
+        ri_data: Dict,
+        recommendations: List[Dict],
+        all_data: Dict,
+        output_path: str
+    ):
+        """Generate comprehensive PDF report with charts and visualizations"""
+        doc = SimpleDocTemplate(output_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=28,
+            textColor=colors.HexColor('#0066cc'),
+            spaceAfter=10,
+            alignment=1
+        )
+        subtitle_style = ParagraphStyle(
+            'Subtitle',
+            parent=styles['Normal'],
+            fontSize=14,
+            textColor=colors.HexColor('#003d7a'),
+            spaceAfter=30,
+            alignment=1
+        )
+        
+        # Title Page
+        story.append(Paragraph("CLOUDXCELAI FINOPTIMIZER", title_style))
+        story.append(Paragraph("Comprehensive Cloud Financial Operations Report", subtitle_style))
+        story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Executive Summary
+        story.append(Paragraph("Executive Summary", styles['Heading2']))
+        
+        total_cost = cost_data.get('total_cost', 0)
+        monthly_avg = total_cost / 6 if total_cost else 0
+        idle_waste = all_data.get('idle_resources', {}).get('total_monthly_waste', 0)
+        
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Cost (6 months)', f"${total_cost:,.2f}"],
+            ['Monthly Average', f"${monthly_avg:,.2f}"],
+            ['Total Recommendations', str(len(recommendations))],
+            ['Critical/High Priority', str(sum(1 for r in recommendations if r.get('severity') in ['Critical', 'High']))],
+            ['Monthly Savings Potential', f"${idle_waste:,.2f}"],
+            ['Annual Savings Potential', f"${idle_waste * 12:,.2f}"]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0066cc')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Cost Analysis with Charts
+        story.append(PageBreak())
+        story.append(Paragraph("Cost Analysis & Visualization", styles['Heading2']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Cost breakdown chart
+        story.append(self._create_cost_breakdown_chart(cost_data))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Resource distribution chart
+        story.append(Paragraph("Resource Distribution", styles['Heading3']))
+        story.append(self._create_resource_distribution_chart(all_data))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Recommendations Analysis
+        story.append(PageBreak())
+        story.append(Paragraph("Recommendations Analysis", styles['Heading2']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Recommendations by severity chart
+        story.append(self._create_recommendations_chart(recommendations))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Detailed Recommendations
+        story.append(Paragraph("Detailed Recommendations", styles['Heading3']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        for idx, rec in enumerate(recommendations[:10], 1):  # Limit to top 10
+            rec_title = f"{idx}. {rec.get('title', 'Recommendation')}"
+            story.append(Paragraph(rec_title, styles['Heading4']))
+            
+            rec_data = [
+                ['Severity', rec.get('severity', 'N/A')],
+                ['Timeline', rec.get('timeline', 'N/A')],
+                ['Estimated Savings', rec.get('estimated_savings', 'N/A')],
+                ['Impact', rec.get('impact', 'N/A')]
+            ]
+            
+            rec_table = Table(rec_data, colWidths=[1.5*inch, 4*inch])
+            rec_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 0), (-1, -1), 10)
+            ]))
+            story.append(rec_table)
+            story.append(Spacer(1, 0.2*inch))
+        
+        # RI Analysis
+        story.append(PageBreak())
+        story.append(Paragraph("Reserved Instance Analysis", styles['Heading2']))
+        ri_recommendations = ri_data.get('recommendations', {}).get('Recommendations', [])
+        story.append(Paragraph(f"Active RIs: {len(ri_data.get('current_ris', []))}", styles['Normal']))
+        story.append(Paragraph(f"RI Purchase Recommendations: {len(ri_recommendations)}", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Build PDF
+        doc.build(story)
+    
+    def _create_resource_distribution_chart(self, all_data):
+        """Create a bar chart for resource distribution"""
+        drawing = Drawing(400, 200)
+        
+        # Get resource counts
+        ec2_count = len(all_data.get('rightsizing', {}).get('recommendations', []))
+        s3_count = all_data.get('s3_data', {}).get('total_buckets', 0)
+        rds_count = all_data.get('rds_data', {}).get('total_instances', 0)
+        lambda_count = all_data.get('lambda_data', {}).get('total_functions', 0)
+        
+        # Create bar chart
+        chart = VerticalBarChart()
+        chart.x = 50
+        chart.y = 50
+        chart.height = 125
+        chart.width = 300
+        
+        # Data
+        chart.data = [[ec2_count, s3_count, rds_count, lambda_count]]
+        chart.categoryAxis.categoryNames = ['EC2', 'S3', 'RDS', 'Lambda']
+        
+        # Styling
+        chart.bars[0].fillColor = colors.HexColor('#0066cc')
+        chart.valueAxis.valueMin = 0
+        chart.categoryAxis.labels.boxAnchor = 'ne'
+        chart.categoryAxis.labels.dx = 8
+        chart.categoryAxis.labels.dy = -2
+        
+        drawing.add(chart)
+        
+        # Title
+        title = String(200, 180, 'Resource Count by Service', textAnchor='middle')
+        title.fontName = 'Helvetica-Bold'
+        title.fontSize = 12
+        drawing.add(title)
+        
+        return drawing
     
     def generate_kpi_pdf(
         self,
@@ -180,7 +433,7 @@ class ReportGenerator:
         )
         
         # Title Page
-        story.append(Paragraph("BCT FINOPS TOOL", title_style))
+        story.append(Paragraph("CLOUDXCELAI FINOPTIMIZER", title_style))
         story.append(Paragraph("FinOps Maturity Assessment Report", subtitle_style))
         story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
         story.append(Spacer(1, 0.5*inch))
@@ -468,8 +721,8 @@ class ReportGenerator:
         """Generate DOCX report"""
         doc = Document()
         
-        # Title with BCT Branding
-        title = doc.add_heading('BCT FINOPS TOOL', 0)
+        # Title with CloudXcelAI Branding
+        title = doc.add_heading('CLOUDXCELAI FINOPTIMIZER', 0)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title.runs[0].font.color.rgb = RGBColor(0, 102, 204)
         

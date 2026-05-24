@@ -58,6 +58,15 @@ app_enhanced.py
 app_bct_v2.py
 main.py
 
+# Backup and temp files
+streamlit_app_backup.py
+streamlit_app_new.py
+debug_test.py
+test_simple.py
+CHANGES_SUMMARY.md
+LOGO_SETUP.md
+users.json
+
 # Batch files
 *.bat
 *.sh
